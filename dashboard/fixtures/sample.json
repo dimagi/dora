@@ -1,0 +1,800 @@
+{
+  "since": "2025-10-24",
+  "metrics": [
+    {
+      "metric": "deploy-freq-prs",
+      "description": "Weekly merged PRs (proxy for shipped changes)",
+      "data": [
+        {
+          "repo": "acme/example",
+          "week": "2025-W43",
+          "deploys": 17
+        },
+        {
+          "repo": "acme/example",
+          "week": "2025-W44",
+          "deploys": 33
+        },
+        {
+          "repo": "acme/example",
+          "week": "2025-W45",
+          "deploys": 19
+        },
+        {
+          "repo": "acme/example",
+          "week": "2025-W46",
+          "deploys": 24
+        },
+        {
+          "repo": "acme/example",
+          "week": "2025-W47",
+          "deploys": 17
+        },
+        {
+          "repo": "acme/example",
+          "week": "2025-W48",
+          "deploys": 27
+        },
+        {
+          "repo": "acme/example",
+          "week": "2025-W49",
+          "deploys": 11
+        },
+        {
+          "repo": "acme/example",
+          "week": "2025-W50",
+          "deploys": 12
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W01",
+          "deploys": 20
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W02",
+          "deploys": 19
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W03",
+          "deploys": 28
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W04",
+          "deploys": 24
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W05",
+          "deploys": 36
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W06",
+          "deploys": 34
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W07",
+          "deploys": 33
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W08",
+          "deploys": 37
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W09",
+          "deploys": 42
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W10",
+          "deploys": 21
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W11",
+          "deploys": 26
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W12",
+          "deploys": 30
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W13",
+          "deploys": 17
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W14",
+          "deploys": 21
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W15",
+          "deploys": 8
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W16",
+          "deploys": 23
+        }
+      ]
+    },
+    {
+      "metric": "deploy-freq",
+      "description": "Weekly successful deployments (success + inactive GitHub statuses)",
+      "data": [
+        {
+          "repo": "acme/example",
+          "environment": "aws-prod",
+          "week": "2025-W43",
+          "deploys": 18
+        },
+        {
+          "repo": "acme/example",
+          "environment": "aws-prod",
+          "week": "2025-W44",
+          "deploys": 27
+        },
+        {
+          "repo": "acme/example",
+          "environment": "aws-prod",
+          "week": "2025-W45",
+          "deploys": 15
+        },
+        {
+          "repo": "acme/example",
+          "environment": "aws-prod",
+          "week": "2025-W46",
+          "deploys": 21
+        },
+        {
+          "repo": "acme/example",
+          "environment": "aws-prod",
+          "week": "2025-W47",
+          "deploys": 18
+        },
+        {
+          "repo": "acme/example",
+          "environment": "aws-prod",
+          "week": "2025-W48",
+          "deploys": 13
+        },
+        {
+          "repo": "acme/example",
+          "environment": "aws-prod",
+          "week": "2025-W49",
+          "deploys": 11
+        },
+        {
+          "repo": "acme/example",
+          "environment": "aws-prod",
+          "week": "2025-W50",
+          "deploys": 12
+        },
+        {
+          "repo": "acme/example",
+          "environment": "aws-prod",
+          "week": "2026-W01",
+          "deploys": 9
+        },
+        {
+          "repo": "acme/example",
+          "environment": "aws-prod",
+          "week": "2026-W02",
+          "deploys": 16
+        },
+        {
+          "repo": "acme/example",
+          "environment": "aws-prod",
+          "week": "2026-W03",
+          "deploys": 21
+        },
+        {
+          "repo": "acme/example",
+          "environment": "aws-prod",
+          "week": "2026-W04",
+          "deploys": 20
+        },
+        {
+          "repo": "acme/example",
+          "environment": "aws-prod",
+          "week": "2026-W05",
+          "deploys": 28
+        },
+        {
+          "repo": "acme/example",
+          "environment": "aws-prod",
+          "week": "2026-W06",
+          "deploys": 17
+        },
+        {
+          "repo": "acme/example",
+          "environment": "aws-prod",
+          "week": "2026-W07",
+          "deploys": 20
+        },
+        {
+          "repo": "acme/example",
+          "environment": "aws-prod",
+          "week": "2026-W08",
+          "deploys": 21
+        },
+        {
+          "repo": "acme/example",
+          "environment": "aws-prod",
+          "week": "2026-W09",
+          "deploys": 13
+        },
+        {
+          "repo": "acme/example",
+          "environment": "aws-prod",
+          "week": "2026-W10",
+          "deploys": 7
+        },
+        {
+          "repo": "acme/example",
+          "environment": "aws-prod",
+          "week": "2026-W11",
+          "deploys": 11
+        },
+        {
+          "repo": "acme/example",
+          "environment": "aws-prod",
+          "week": "2026-W12",
+          "deploys": 20
+        },
+        {
+          "repo": "acme/example",
+          "environment": "aws-prod",
+          "week": "2026-W13",
+          "deploys": 10
+        },
+        {
+          "repo": "acme/example",
+          "environment": "aws-prod",
+          "week": "2026-W14",
+          "deploys": 13
+        },
+        {
+          "repo": "acme/example",
+          "environment": "aws-prod",
+          "week": "2026-W15",
+          "deploys": 1
+        },
+        {
+          "repo": "acme/example",
+          "environment": "aws-prod",
+          "week": "2026-W16",
+          "deploys": 20
+        }
+      ]
+    },
+    {
+      "metric": "lead-time",
+      "description": "Weekly lead time in hours, first commit to merge (mean / median / p90)",
+      "data": [
+        {
+          "repo": "acme/example",
+          "week": "2025-W43",
+          "prs": 17,
+          "mean_h": 32.1,
+          "median_h": 4.4,
+          "p90_h": 92.1
+        },
+        {
+          "repo": "acme/example",
+          "week": "2025-W44",
+          "prs": 33,
+          "mean_h": 114.0,
+          "median_h": 46.7,
+          "p90_h": 68.7
+        },
+        {
+          "repo": "acme/example",
+          "week": "2025-W45",
+          "prs": 19,
+          "mean_h": 73.4,
+          "median_h": 16.0,
+          "p90_h": 347.7
+        },
+        {
+          "repo": "acme/example",
+          "week": "2025-W46",
+          "prs": 24,
+          "mean_h": 54.4,
+          "median_h": 18.8,
+          "p90_h": 161.2
+        },
+        {
+          "repo": "acme/example",
+          "week": "2025-W47",
+          "prs": 17,
+          "mean_h": 68.2,
+          "median_h": 36.5,
+          "p90_h": 214.8
+        },
+        {
+          "repo": "acme/example",
+          "week": "2025-W48",
+          "prs": 27,
+          "mean_h": 33.4,
+          "median_h": 1.5,
+          "p90_h": 61.2
+        },
+        {
+          "repo": "acme/example",
+          "week": "2025-W49",
+          "prs": 11,
+          "mean_h": 64.1,
+          "median_h": 8.1,
+          "p90_h": 138.6
+        },
+        {
+          "repo": "acme/example",
+          "week": "2025-W50",
+          "prs": 12,
+          "mean_h": 60.8,
+          "median_h": 54.2,
+          "p90_h": 152.3
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W01",
+          "prs": 20,
+          "mean_h": 120.9,
+          "median_h": 99.2,
+          "p90_h": 443.3
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W02",
+          "prs": 19,
+          "mean_h": 63.5,
+          "median_h": 14.7,
+          "p90_h": 142.3
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W03",
+          "prs": 28,
+          "mean_h": 77.0,
+          "median_h": 17.0,
+          "p90_h": 319.4
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W04",
+          "prs": 24,
+          "mean_h": 62.5,
+          "median_h": 8.4,
+          "p90_h": 176.2
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W05",
+          "prs": 36,
+          "mean_h": 27.2,
+          "median_h": 21.4,
+          "p90_h": 70.8
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W06",
+          "prs": 34,
+          "mean_h": 16.7,
+          "median_h": 3.3,
+          "p90_h": 66.2
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W07",
+          "prs": 33,
+          "mean_h": 31.3,
+          "median_h": 2.1,
+          "p90_h": 62.8
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W08",
+          "prs": 37,
+          "mean_h": 16.6,
+          "median_h": 5.0,
+          "p90_h": 56.3
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W09",
+          "prs": 42,
+          "mean_h": 20.0,
+          "median_h": 15.7,
+          "p90_h": 43.9
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W10",
+          "prs": 21,
+          "mean_h": 16.2,
+          "median_h": 19.4,
+          "p90_h": 40.1
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W11",
+          "prs": 26,
+          "mean_h": 43.4,
+          "median_h": 11.8,
+          "p90_h": 168.6
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W12",
+          "prs": 30,
+          "mean_h": 51.2,
+          "median_h": 6.5,
+          "p90_h": 145.4
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W13",
+          "prs": 17,
+          "mean_h": 30.7,
+          "median_h": 20.1,
+          "p90_h": 90.3
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W14",
+          "prs": 21,
+          "mean_h": 52.4,
+          "median_h": 9.7,
+          "p90_h": 166.6
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W15",
+          "prs": 8,
+          "mean_h": 81.6,
+          "median_h": 14.2,
+          "p90_h": 494.5
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W16",
+          "prs": 23,
+          "mean_h": 107.9,
+          "median_h": 23.5,
+          "p90_h": 315.2
+        }
+      ]
+    },
+    {
+      "metric": "change-failure-rate",
+      "description": "Weekly % of merged PRs labelled `caused-incident`",
+      "data": [
+        {
+          "repo": "acme/example",
+          "week": "2025-W43",
+          "deploys": 17,
+          "failures": 0,
+          "failure_pct": 0.0
+        },
+        {
+          "repo": "acme/example",
+          "week": "2025-W44",
+          "deploys": 33,
+          "failures": 2,
+          "failure_pct": 6.1
+        },
+        {
+          "repo": "acme/example",
+          "week": "2025-W45",
+          "deploys": 19,
+          "failures": 0,
+          "failure_pct": 0.0
+        },
+        {
+          "repo": "acme/example",
+          "week": "2025-W46",
+          "deploys": 24,
+          "failures": 1,
+          "failure_pct": 4.2
+        },
+        {
+          "repo": "acme/example",
+          "week": "2025-W47",
+          "deploys": 17,
+          "failures": 0,
+          "failure_pct": 0.0
+        },
+        {
+          "repo": "acme/example",
+          "week": "2025-W48",
+          "deploys": 27,
+          "failures": 0,
+          "failure_pct": 0.0
+        },
+        {
+          "repo": "acme/example",
+          "week": "2025-W49",
+          "deploys": 11,
+          "failures": 0,
+          "failure_pct": 0.0
+        },
+        {
+          "repo": "acme/example",
+          "week": "2025-W50",
+          "deploys": 12,
+          "failures": 0,
+          "failure_pct": 0.0
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W01",
+          "deploys": 20,
+          "failures": 0,
+          "failure_pct": 0.0
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W02",
+          "deploys": 19,
+          "failures": 1,
+          "failure_pct": 5.3
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W03",
+          "deploys": 28,
+          "failures": 0,
+          "failure_pct": 0.0
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W04",
+          "deploys": 24,
+          "failures": 0,
+          "failure_pct": 0.0
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W05",
+          "deploys": 36,
+          "failures": 0,
+          "failure_pct": 0.0
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W06",
+          "deploys": 34,
+          "failures": 0,
+          "failure_pct": 0.0
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W07",
+          "deploys": 33,
+          "failures": 0,
+          "failure_pct": 0.0
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W08",
+          "deploys": 37,
+          "failures": 0,
+          "failure_pct": 0.0
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W09",
+          "deploys": 42,
+          "failures": 0,
+          "failure_pct": 0.0
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W10",
+          "deploys": 21,
+          "failures": 0,
+          "failure_pct": 0.0
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W11",
+          "deploys": 26,
+          "failures": 0,
+          "failure_pct": 0.0
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W12",
+          "deploys": 30,
+          "failures": 0,
+          "failure_pct": 0.0
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W13",
+          "deploys": 17,
+          "failures": 0,
+          "failure_pct": 0.0
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W14",
+          "deploys": 21,
+          "failures": 0,
+          "failure_pct": 0.0
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W15",
+          "deploys": 8,
+          "failures": 0,
+          "failure_pct": 0.0
+        },
+        {
+          "repo": "acme/example",
+          "week": "2026-W16",
+          "deploys": 23,
+          "failures": 0,
+          "failure_pct": 0.0
+        }
+      ]
+    },
+    {
+      "metric": "hotfixes",
+      "description": "Recent hotfix PRs with their preceding merges (investigative)",
+      "data": [
+        {
+          "repo": "acme/example",
+          "pr": "#2641",
+          "relation": "hotfix",
+          "merged": "2026-01-14",
+          "author": "snopoke",
+          "title": "Revert \"Upgrade django-allauth from 0.57.2 to 65.13.1\""
+        },
+        {
+          "repo": "acme/example",
+          "pr": "#2633",
+          "relation": "preceded-by",
+          "merged": "2026-01-14",
+          "author": "snopoke",
+          "title": "Upgrade django-allauth from 0.57.2 to 65.13.1"
+        },
+        {
+          "repo": "acme/example",
+          "pr": "#2635",
+          "relation": "preceded-by",
+          "merged": "2026-01-14",
+          "author": "snopoke",
+          "title": "Update OpenAI speech models to latest generation"
+        },
+        {
+          "repo": "acme/example",
+          "pr": "#2637",
+          "relation": "preceded-by",
+          "merged": "2026-01-14",
+          "author": "dependabot[bot]",
+          "title": "Bump filelock from 3.13.1 to 3.20.3 in the uv group across 1 directory"
+        },
+        {
+          "repo": "acme/example",
+          "pr": "#2485",
+          "relation": "hotfix",
+          "merged": "2025-11-20",
+          "author": "snopoke",
+          "title": "Revert \"Merge pull request #2431 from acme/sk/tool-call-response-siz"
+        },
+        {
+          "repo": "acme/example",
+          "pr": "#2483",
+          "relation": "preceded-by",
+          "merged": "2025-11-20",
+          "author": "snopoke",
+          "title": "update all nodes, not only those with the supported models"
+        },
+        {
+          "repo": "acme/example",
+          "pr": "#2484",
+          "relation": "preceded-by",
+          "merged": "2025-11-20",
+          "author": "snopoke",
+          "title": "Fix flaky test near midnight date boundary"
+        },
+        {
+          "repo": "acme/example",
+          "pr": "#2461",
+          "relation": "preceded-by",
+          "merged": "2025-11-20",
+          "author": "dtolentino-acme",
+          "title": "#2126 dont show edit name widget in chatbot edit"
+        },
+        {
+          "repo": "acme/example",
+          "pr": "#2433",
+          "relation": "hotfix",
+          "merged": "2025-11-09",
+          "author": "snopoke",
+          "title": "Revert \"Langfuse v3\""
+        },
+        {
+          "repo": "acme/example",
+          "pr": "#2432",
+          "relation": "preceded-by",
+          "merged": "2025-11-08",
+          "author": "snopoke",
+          "title": "downgrade gevent for SSL bug"
+        },
+        {
+          "repo": "acme/example",
+          "pr": "#2429",
+          "relation": "preceded-by",
+          "merged": "2025-11-07",
+          "author": "snopoke",
+          "title": "add initial ai workflow docs"
+        },
+        {
+          "repo": "acme/example",
+          "pr": "#2427",
+          "relation": "preceded-by",
+          "merged": "2025-11-07",
+          "author": "seer-by-sentry[bot]",
+          "title": "Skip embeddings for files no longer in collection during version creat"
+        },
+        {
+          "repo": "acme/example",
+          "pr": "#2432",
+          "relation": "hotfix",
+          "merged": "2025-11-08",
+          "author": "snopoke",
+          "title": "downgrade gevent for SSL bug"
+        },
+        {
+          "repo": "acme/example",
+          "pr": "#2429",
+          "relation": "preceded-by",
+          "merged": "2025-11-07",
+          "author": "snopoke",
+          "title": "add initial ai workflow docs"
+        },
+        {
+          "repo": "acme/example",
+          "pr": "#2427",
+          "relation": "preceded-by",
+          "merged": "2025-11-07",
+          "author": "seer-by-sentry[bot]",
+          "title": "Skip embeddings for files no longer in collection during version creat"
+        },
+        {
+          "repo": "acme/example",
+          "pr": "#2150",
+          "relation": "preceded-by",
+          "merged": "2025-11-07",
+          "author": "stephherbers",
+          "title": "Client key security for chat widget"
+        }
+      ]
+    },
+    {
+      "metric": "summary",
+      "description": "Per-repo roll-up over the whole window",
+      "data": [
+        {
+          "repo": "acme/example",
+          "prs": 579,
+          "prs_per_week": 24.1,
+          "median_lead_h": 16.3,
+          "cfr": "0.7%"
+        }
+      ]
+    }
+  ]
+}
