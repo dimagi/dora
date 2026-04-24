@@ -1,0 +1,134 @@
+# Dora — DORA metrics from GitHub
+
+[![Tests](https://github.com/dimagi/dora/actions/workflows/test.yml/badge.svg)](https://github.com/dimagi/dora/actions/workflows/test.yml)
+
+A Python CLI that pulls the four DORA metrics — deployment frequency, lead time for changes, change failure rate, and a hotfix investigation helper — from the GitHub API, and a static dashboard (GitHub Pages) that renders the resulting `report.json`.
+
+Designed for team adoption: you run the CLI on your own repo (locally or from CI), produce a `report.json`, and share a link to the central dashboard pointing at your data.
+
+## Quick start
+
+### Install the CLI
+
+```bash
+uv tool install git+https://github.com/dimagi/dora
+# or with the S3 extra:
+uv tool install "git+https://github.com/dimagi/dora[s3]"
+```
+
+### Generate a report
+
+```bash
+# First pull (slow: one API call per PR for commit history)
+dora pull --repo owner/name --since 2025-10-01
+
+# Report to stdout
+dora report
+
+# Or as JSON:
+dora report --format json --output dora-report.json
+```
+
+### View on the dashboard
+
+```
+https://dimagi.github.io/dora/?url=https://<your-json-location>/dora-report.json
+```
+
+Or open `https://dimagi.github.io/dora/` and upload the file directly.
+
+## Subcommands
+
+- `dora pull` — fetch merged PRs + deployments from GitHub into a SQLite cache
+- `dora report` — run metric queries, emit table / CSV / JSON
+- `dora upload` — upload a file to an `s3://bucket/key` target (install with `[s3]` extra)
+
+Run `dora <subcommand> --help` for flags.
+
+## Adoption (for teams running this in CI)
+
+Copy [`examples/workflows/dora-report.yml`](examples/workflows/dora-report.yml) to your repo's `.github/workflows/` directory. Edit the `--since` date once. The workflow:
+
+1. Runs weekly (cron) or on demand
+2. Pulls into a temporary SQLite DB
+3. Writes `dora-report.json`
+4. Commits the JSON back to your repo
+
+Your dashboard link becomes:
+
+```
+https://dimagi.github.io/dora/?url=https://raw.githubusercontent.com/<your-repo>/main/dora-report.json
+```
+
+### Cross-repo reports
+
+The default `GITHUB_TOKEN` in Actions is scoped to the workflow's own repo. To aggregate multiple repos (`--repo a/b --repo c/d`), generate a PAT or install a GitHub App with access to each repo and pass its token via `GITHUB_TOKEN` in the env.
+
+### S3 variant
+
+A commented S3 upload step is in the example workflow. You'll need:
+- `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` as repo secrets
+- Bucket CORS config allowing `GET` from `*` (so the dashboard can fetch)
+
+## Metric definitions
+
+| Metric | Counts | Notes |
+|---|---|---|
+| `deploy-freq-prs` | Merged PRs into `main` per week | Overstates if PRs are batched into single deploys |
+| `deploy-freq` | Successful deployments per week | Counts both `success` and `inactive` GitHub statuses |
+| `lead-time` | Hours from first commit to merge | Mean / median / p90 per week |
+| `change-failure-rate` | % of merged PRs labelled `caused-incident` | Requires label discipline |
+| `hotfixes` | Recent `hotfix`-labelled PRs + their 3 preceding merges | Investigative — helps find causing PRs to backfill `caused-incident` |
+| `summary` | Per-repo roll-up over the window | Used by the dashboard's summary tiles |
+
+## Label conventions
+
+- **`caused-incident`** — applied to the PR that SHIPPED a production defect. This is what `change-failure-rate` counts.
+- **`hotfix`** — applied to the PR that FIXED a prior defect. Not counted in CFR (avoids double-counting one incident as two). Surfaced by `hotfixes`.
+
+Do not apply both to the same PR.
+
+## Deployment status quirks
+
+GitHub auto-marks a successful deployment as `inactive` when a newer deployment for the same environment succeeds — so most historically-successful deploys show up as `inactive`, not `success`. The report treats both as successful.
+
+Stuck `pending` rows usually indicate a workflow-level timeout (e.g. `aws ecs wait services-stable` killed by a CI job timeout). Fix by emitting a terminal deployment status in an `if: always()` step.
+
+## Development
+
+```bash
+git clone https://github.com/dimagi/dora
+cd dora
+uv sync --extra dev --extra s3
+uv run pytest
+```
+
+Preview the dashboard locally:
+
+```bash
+cd dashboard
+python -m http.server 8000
+# open http://localhost:8000/?url=fixtures/sample.json
+```
+
+## Data model
+
+```
+pull_requests (repo, number) PK
+  title, author, base, labels (comma-joined)
+  opened_at, merged_at, first_commit_at
+  merge_sha
+
+deployments (repo, deployment_id) PK
+  sha, environment, created_at, status
+```
+
+The DB is a rebuildable cache — not a source of truth. Drop it and re-pull at any time.
+
+## Roadmap
+
+See [`docs/superpowers/specs/2026-04-24-dora-project-design.md`](docs/superpowers/specs/2026-04-24-dora-project-design.md) § Future work — includes `dora merge`, a dashboard date-range filter, deploy-status-based CFR, and a multi-team manifest.
+
+## License
+
+BSD-3-Clause. See [LICENSE](LICENSE).
