@@ -1,0 +1,60 @@
+# Copy this file into your repo at .github/workflows/dora-report.yml
+# Edit the `--since` date once on adoption. No other secrets needed
+# beyond the default GITHUB_TOKEN.
+#
+# Once deployed, share this link internally:
+#   https://dimagi.github.io/dora/?url=https://raw.githubusercontent.com/<your-repo>/main/dora-report.json
+name: DORA metrics
+on:
+  schedule:
+    - cron: "0 6 * * 1"   # Mondays, 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # to commit dora-report.json back to the repo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+
+      - name: Install dora
+        run: uv tool install git+https://github.com/dimagi/dora
+
+      - name: Pull & report
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          dora pull --repo ${{ github.repository }} --since 2025-10-01
+          dora report --format json --output dora-report.json
+
+      - name: Commit report
+        run: |
+          git config user.name  "dora-bot"
+          git config user.email "dora-bot@users.noreply.github.com"
+          git add dora-report.json
+          if git diff --staged --quiet; then
+            echo "No change to dora-report.json"
+          else
+            git commit -m "Update DORA report"
+            git push
+          fi
+
+# --- S3 variant -------------------------------------------------------------
+# Replace the "Commit report" step with:
+#
+#       - name: Upload to S3
+#         env:
+#           AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+#           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#           AWS_DEFAULT_REGION:    us-east-1
+#         run: |
+#           uv tool install "git+https://github.com/dimagi/dora[s3]"
+#           dora upload dora-report.json \
+#             --target s3://my-bucket/dora-report.json --public-read
+#
+# S3 bucket CORS (so the dashboard can fetch from your bucket):
+#   [ { "AllowedOrigins": ["*"],
+#       "AllowedMethods": ["GET"],
+#       "AllowedHeaders": ["*"] } ]
