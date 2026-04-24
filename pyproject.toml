@@ -1,0 +1,36 @@
+[project]
+name = "dora-metrics"
+version = "0.1.0"
+description = "Pull DORA metrics from GitHub and visualise them on a static dashboard."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "BSD-3-Clause" }
+authors = [{ name = "Dimagi" }]
+dependencies = [
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+s3 = ["boto3>=1.34"]
+dev = [
+    "pytest>=8.0",
+    "requests-mock>=1.11",
+]
+
+[project.scripts]
+dora = "dora.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/dimagi/dora"
+Issues   = "https://github.com/dimagi/dora/issues"
+
+[build-system]
+requires      = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dora"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts   = "-ra --strict-markers"
