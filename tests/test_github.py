@@ -74,3 +74,109 @@ def test_gh_sleeps_and_retries_on_rate_limit(requests_mock, monkeypatch):
     items = list(github.gh(session, "/foo"))
     assert items == [{"id": 1}]
     assert slept and slept[0] >= 5
+
+
+# --- fetch_prs ------------------------------------------------------------
+
+def test_fetch_prs_filters_to_merged_within_window(requests_mock):
+    base = "https://api.github.com"
+    requests_mock.get(
+        f"{base}/repos/x/y/pulls",
+        json=[
+            {   # in window, merged → kept
+                "number": 1, "title": "t1", "user": {"login": "a"},
+                "base": {"ref": "main"}, "labels": [],
+                "created_at": "2025-10-10T00:00:00Z",
+                "updated_at": "2025-10-10T00:00:00Z",
+                "merged_at":  "2025-10-10T00:00:00Z",
+                "merge_commit_sha": "s1",
+            },
+            {   # in window, NOT merged → skipped
+                "number": 2, "title": "t2", "user": {"login": "a"},
+                "base": {"ref": "main"}, "labels": [],
+                "created_at": "2025-10-10T00:00:00Z",
+                "updated_at": "2025-10-10T00:00:00Z",
+                "merged_at": None,
+                "merge_commit_sha": None,
+            },
+            {   # before window → paginator should stop
+                "number": 3, "title": "t3", "user": {"login": "a"},
+                "base": {"ref": "main"}, "labels": [],
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:00Z",
+                "merged_at":  "2024-01-01T00:00:00Z",
+                "merge_commit_sha": "s3",
+            },
+        ],
+    )
+    requests_mock.get(
+        f"{base}/repos/x/y/pulls/1/commits",
+        json=[{"commit": {"author": {"date": "2025-10-09T00:00:00Z"}}}],
+    )
+
+    session = requests.Session()
+    since = github.iso_to_dt("2025-10-01T00:00:00+00:00")
+    out = list(github.fetch_prs(session, "x/y", since, "main", known_prs=set()))
+    assert [p["number"] for p in out] == [1]
+    assert out[0]["first_commit_at"] == "2025-10-09T00:00:00Z"
+
+
+def test_fetch_prs_skips_commits_for_known(requests_mock):
+    base = "https://api.github.com"
+    requests_mock.get(
+        f"{base}/repos/x/y/pulls",
+        json=[{
+            "number": 1, "title": "t", "user": {"login": "a"},
+            "base": {"ref": "main"}, "labels": [{"name": "L1"}],
+            "created_at": "2025-10-10T00:00:00Z",
+            "updated_at": "2025-10-10T00:00:00Z",
+            "merged_at":  "2025-10-10T00:00:00Z",
+            "merge_commit_sha": "s1",
+        }],
+    )
+    # If the implementation tried /commits, requests-mock would 404.
+    session = requests.Session()
+    since = github.iso_to_dt("2025-10-01T00:00:00+00:00")
+    out = list(github.fetch_prs(session, "x/y", since, "main", known_prs={1}))
+    assert out[0]["first_commit_at"] is None
+    assert out[0]["labels"] == "L1"
+
+
+# --- fetch_deployments ----------------------------------------------------
+
+def test_fetch_deployments_skips_statuses_for_known(requests_mock):
+    base = "https://api.github.com"
+    requests_mock.get(
+        f"{base}/repos/x/y/deployments",
+        json=[{
+            "id": 100, "sha": "s1", "environment": "production",
+            "created_at": "2025-10-10T00:00:00Z",
+        }],
+    )
+    session = requests.Session()
+    since = github.iso_to_dt("2025-10-01T00:00:00+00:00")
+    out = list(github.fetch_deployments(
+        session, "x/y", since, "production", known_deployments={100}
+    ))
+    assert out[0]["status"] is None  # preserved via COALESCE in upsert
+
+
+def test_fetch_deployments_fetches_status_for_unknown(requests_mock):
+    base = "https://api.github.com"
+    requests_mock.get(
+        f"{base}/repos/x/y/deployments",
+        json=[{
+            "id": 100, "sha": "s1", "environment": "production",
+            "created_at": "2025-10-10T00:00:00Z",
+        }],
+    )
+    requests_mock.get(
+        f"{base}/repos/x/y/deployments/100/statuses",
+        json=[{"state": "success"}],
+    )
+    session = requests.Session()
+    since = github.iso_to_dt("2025-10-01T00:00:00+00:00")
+    out = list(github.fetch_deployments(
+        session, "x/y", since, "production", known_deployments=set()
+    ))
+    assert out[0]["status"] == "success"

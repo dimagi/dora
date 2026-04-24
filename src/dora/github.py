@@ -76,3 +76,91 @@ def gh(
 def iso_to_dt(s: str) -> datetime:
     """Parse an ISO-8601 timestamp (GitHub uses trailing Z) to aware datetime."""
     return datetime.fromisoformat(s.replace("Z", "+00:00"))
+
+
+def fetch_prs(
+    session: requests.Session,
+    repo: str,
+    since: datetime,
+    base: str,
+    known_prs: set[int],
+) -> Generator[dict, None, None]:
+    """Yield merged PRs against `base` merged on/after `since`.
+
+    The /pulls API doesn't filter by merged_at, so we page in updated-desc
+    order, stop when we page past `since`, and filter merged_at within.
+
+    PRs whose number is in `known_prs` skip the /commits call (the
+    expensive part) — first_commit_at stays None so the upsert COALESCE
+    preserves the existing DB value.
+    """
+    params = {
+        "state":     "closed",
+        "sort":      "updated",
+        "direction": "desc",
+        "base":      base,
+        "per_page":  100,
+    }
+    for pr in gh(session, f"/repos/{repo}/pulls", params):
+        if iso_to_dt(pr["updated_at"]) < since:
+            return
+        if not pr["merged_at"] or iso_to_dt(pr["merged_at"]) < since:
+            continue
+
+        if pr["number"] in known_prs:
+            first_commit_at = None  # cached
+        else:
+            commits = list(
+                gh(session, f"/repos/{repo}/pulls/{pr['number']}/commits", {"per_page": 100})
+            )
+            first_commit_at = (
+                commits[0]["commit"]["author"]["date"] if commits else pr["created_at"]
+            )
+
+        yield {
+            "number":          pr["number"],
+            "title":           pr["title"],
+            "author":          (pr.get("user") or {}).get("login"),
+            "base":            pr["base"]["ref"],
+            "opened_at":       pr["created_at"],
+            "merged_at":       pr["merged_at"],
+            "first_commit_at": first_commit_at,
+            "merge_sha":       pr["merge_commit_sha"],
+            "labels":          ",".join(l["name"] for l in pr.get("labels") or []),
+        }
+
+
+def fetch_deployments(
+    session: requests.Session,
+    repo: str,
+    since: datetime,
+    environment: str,
+    known_deployments: set[int],
+) -> Generator[dict, None, None]:
+    """Yield deployments for `environment` created on/after `since`.
+
+    Deployments in `known_deployments` (already have a terminal status)
+    skip the /statuses call; yielded status is None so COALESCE preserves
+    the stored value. Transient statuses (pending/queued/in_progress) are
+    always re-fetched because they can change.
+    """
+    params = {"environment": environment, "per_page": 100}
+    for d in gh(session, f"/repos/{repo}/deployments", params):
+        if iso_to_dt(d["created_at"]) < since:
+            return  # API returns newest first
+
+        if d["id"] in known_deployments:
+            status = None
+        else:
+            statuses = list(
+                gh(session, f"/repos/{repo}/deployments/{d['id']}/statuses", {"per_page": 1})
+            )
+            status = statuses[0]["state"] if statuses else None
+
+        yield {
+            "deployment_id": d["id"],
+            "sha":           d["sha"],
+            "environment":   d["environment"],
+            "created_at":    d["created_at"],
+            "status":        status,
+        }
