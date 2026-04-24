@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DORA metrics</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <h1>DORA metrics</h1>
+
+  <div class="source-row">
+    <label for="url-input" class="sr-only">Report URL</label>
+    <input id="url-input" type="url" placeholder="https://…/report.json">
+    <button id="url-load" type="button">Load</button>
+
+    <label for="file-input" class="file-label">or choose file…</label>
+    <input id="file-input" type="file" accept=".json,application/json">
+
+    <span id="source-info" class="source-info"></span>
+
+    <label for="repo-filter" class="repo-label" hidden>Repo:</label>
+    <select id="repo-filter" hidden></select>
+  </div>
+</header>
+
+<main>
+  <section id="summary" aria-label="Summary">
+    <!-- populated by app.js from `summary` metric -->
+  </section>
+
+  <section id="charts" aria-label="Weekly charts">
+    <div class="chart-grid">
+      <figure><canvas id="chart-deploy-freq-prs"></canvas><figcaption>Deploy frequency (merged PRs)</figcaption></figure>
+      <figure><canvas id="chart-deploy-freq"></canvas><figcaption>Deploy frequency (deployments)</figcaption></figure>
+      <figure><canvas id="chart-lead-time"></canvas><figcaption>Lead time (hours)</figcaption></figure>
+      <figure><canvas id="chart-cfr"></canvas><figcaption>Change failure rate (%)</figcaption></figure>
+    </div>
+  </section>
+
+  <section id="detail">
+    <details>
+      <summary>Weekly metrics (raw tables)</summary>
+      <div id="detail-tables"></div>
+    </details>
+    <details>
+      <summary>Hotfix investigation</summary>
+      <div id="hotfixes-table"></div>
+    </details>
+  </section>
+
+  <p id="empty-state" class="empty-state" hidden>
+    No report loaded. Enter a URL, pick a file, or
+    <a href="?url=fixtures/sample.json">view the sample dataset</a>.
+  </p>
+</main>
+
+<footer>
+  <p>Built with <a href="https://github.com/dimagi/dora">dora-metrics</a>.</p>
+</footer>
+
+<script
+  src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"
+  integrity="sha384-vsrfeLOOY6KuIYKDlmVH5UiBmgIdB1oEf7p01YgWHuqmOHfZr374+odEv96n9tNC"
+  crossorigin="anonymous"
+  referrerpolicy="no-referrer"></script>
+<script src="app.js" defer></script>
+
+</body>
+</html>
