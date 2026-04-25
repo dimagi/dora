@@ -123,10 +123,13 @@ function cfrTier(pct) {
 
 const TIER_LABEL = { elite: "Elite", high: "High", medium: "Medium", low: "Low", na: "N/A" };
 
-function kpiCard({ label, value, unit, subText, tier }) {
+function kpiCard({ label, value, unit, subText, tier, info }) {
+  const infoIcon = info
+    ? `<span class="info-icon" tabindex="0" role="img" aria-label="About ${escapeHtml(label)}" data-tip="${escapeHtml(info)}">i</span>`
+    : "";
   return `
     <div class="kpi">
-      <span class="kpi-label">${escapeHtml(label)}</span>
+      <span class="kpi-label">${escapeHtml(label)}${infoIcon}</span>
       <span class="kpi-value">${escapeHtml(value)}<span class="kpi-unit">${escapeHtml(unit || "")}</span></span>
       <span class="kpi-sub"><span class="tier tier-${tier}">${TIER_LABEL[tier]}</span>${escapeHtml(subText)}</span>
     </div>
@@ -192,6 +195,7 @@ function renderForRepo(metrics, repo) {
   const freqDeploys = filterByRepo(metrics["deploy-freq"]         || [], repo);
   const leadTime    = filterByRepo(metrics["lead-time"]           || [], repo);
   const cfr         = filterByRepo(metrics["change-failure-rate"] || [], repo);
+  const cfrPrs      = filterByRepo(metrics["change-failure-prs"]  || [], repo);
   const hotfixes    = filterByRepo(metrics["hotfixes"]            || [], repo);
   const summary     = filterByRepo(metrics["summary"]             || [], repo);
 
@@ -199,6 +203,7 @@ function renderForRepo(metrics, repo) {
   renderFreqChart(freqPrs, freqDeploys);
   renderLeadChart(leadTime);
   renderCFRChart(cfr);
+  renderCfrPrs(cfrPrs);
   renderHotfixes(hotfixes);
 }
 
@@ -240,6 +245,9 @@ function renderKPIs(summary, freqPrs, freqDeploys, leadTime, cfr) {
       unit: deployUnit,
       subText: "last 4 weeks",
       tier: deployFreqTier(deployPerWk),
+      info: recentDeploys.length
+        ? "Average successful deploys per week, last 4 weeks. Source: GitHub Deployments API for the configured environment (success + inactive statuses)."
+        : "Average merged PRs per week (proxy for shipped changes), last 4 weeks. Source: PRs merged into the base branch — used because no Deployments are recorded.",
     }),
     kpiCard({
       label: "Lead time",
@@ -247,6 +255,7 @@ function renderKPIs(summary, freqPrs, freqDeploys, leadTime, cfr) {
       unit: " h",
       subText: "median, last 4 wk",
       tier: leadTimeTier(leadMedian),
+      info: "Median hours from first commit on a PR's branch to its merge into the base branch, averaged over the last 4 weeks. Source: PR commits + merge timestamp from the GitHub API.",
     }),
     kpiCard({
       label: "Change failure rate",
@@ -254,6 +263,7 @@ function renderKPIs(summary, freqPrs, freqDeploys, leadTime, cfr) {
       unit: " %",
       subText: "across window",
       tier: cfrTier(cfrPct),
+      info: "Across the full window: PRs labelled `caused-incident` ÷ all merged PRs. Apply the label to the PR that SHIPPED the defect (not the PR that fixed it). See the drill-down list below the chart.",
     }),
     kpiCard({
       label: "Mean time to restore",
@@ -261,6 +271,7 @@ function renderKPIs(summary, freqPrs, freqDeploys, leadTime, cfr) {
       unit: "",
       subText: "needs incident log",
       tier: "na",
+      info: "Not automated. Computing MTTR requires an incident log with detected/restored timestamps, which GitHub data alone can't provide.",
     }),
   ].join("");
 }
@@ -364,6 +375,40 @@ function renderCFRChart(cfr) {
     },
     options: opts,
   }));
+}
+
+function renderCfrPrs(rows) {
+  const el = document.getElementById("cfr-prs");
+  if (!rows.length) { el.innerHTML = ""; return; }
+
+  // Rows already arrive ORDER BY repo, week DESC, number DESC — preserve that.
+  // Group consecutive runs of the same week.
+  const groups = [];
+  for (const r of rows) {
+    const last = groups[groups.length - 1];
+    if (last && last.week === r.week) last.prs.push(r);
+    else groups.push({ week: r.week, prs: [r] });
+  }
+
+  const body = groups.map(g => `
+    <div class="cfr-week-head">${escapeHtml(g.week)}</div>
+    ${g.prs.map(p => `
+      <div class="cfr-pr">
+        <a href="https://github.com/${escapeHtml(p.repo)}/pull/${encodeURIComponent(p.pr)}"
+           target="_blank" rel="noopener noreferrer">#${escapeHtml(p.pr)}</a>
+        <span>${escapeHtml(p.title || "")} <span class="cfr-pr-author">· ${escapeHtml(p.author || "")}</span></span>
+        <span class="cfr-pr-date">${escapeHtml(p.merged || "")}</span>
+      </div>
+    `).join("")}
+  `).join("");
+
+  const noun = rows.length === 1 ? "PR" : "PRs";
+  el.innerHTML = `
+    <details class="cfr-details">
+      <summary>${rows.length} incident-causing ${noun}</summary>
+      ${body}
+    </details>
+  `;
 }
 
 function renderHotfixes(rows) {

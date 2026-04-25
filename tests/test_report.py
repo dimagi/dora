@@ -11,7 +11,7 @@ def test_run_report_returns_all_metrics_by_default(fixture_conn):
     names = {r["metric"] for r in out}
     assert names == {
         "deploy-freq-prs", "deploy-freq", "lead-time",
-        "change-failure-rate", "hotfixes", "summary",
+        "change-failure-rate", "change-failure-prs", "hotfixes", "summary",
     }
 
 

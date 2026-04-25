@@ -650,6 +650,44 @@
       ]
     },
     {
+      "metric": "change-failure-prs",
+      "description": "Individual `caused-incident` PRs (drill-down for change-failure-rate)",
+      "data": [
+        {
+          "repo": "acme/example",
+          "week": "2026-W02",
+          "pr": 2618,
+          "author": "carol",
+          "title": "Make worker queue retry idempotent",
+          "merged": "2026-01-08"
+        },
+        {
+          "repo": "acme/example",
+          "week": "2025-W46",
+          "pr": 2509,
+          "author": "alice",
+          "title": "Switch session store to Redis",
+          "merged": "2025-11-12"
+        },
+        {
+          "repo": "acme/example",
+          "week": "2025-W44",
+          "pr": 2453,
+          "author": "bob",
+          "title": "Add bulk delete endpoint",
+          "merged": "2025-10-30"
+        },
+        {
+          "repo": "acme/example",
+          "week": "2025-W44",
+          "pr": 2447,
+          "author": "dave",
+          "title": "Tighten file upload validation",
+          "merged": "2025-10-28"
+        }
+      ]
+    },
+    {
       "metric": "hotfixes",
       "description": "Recent hotfix PRs with their preceding merges (investigative)",
       "data": [

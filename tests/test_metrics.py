@@ -77,6 +77,18 @@ def test_summary_rollup(fixture_conn):
     assert web["cfr"] == "0.0%"
 
 
+def test_change_failure_prs_lists_caused_incident(fixture_conn):
+    headers, rows = metrics.m_change_failure_prs(fixture_conn, SINCE)
+    out = [_row_dict(headers, r) for r in rows]
+    # PR 2 is the only caused-incident in the fixture (acme/api, W41).
+    assert len(out) == 1
+    assert out[0]["pr"]     == 2
+    assert out[0]["repo"]   == "acme/api"
+    assert out[0]["week"]   == "2025-W41"
+    assert out[0]["author"] == "bob"
+    assert out[0]["merged"] == "2025-10-15"
+
+
 def test_hotfixes_lists_hotfix_with_preceding(fixture_conn):
     headers, rows = metrics.m_hotfixes(fixture_conn, SINCE)
     # Expect PR 6 (acme/web, hotfix) as a 'hotfix' row, followed by up to 3
@@ -86,12 +98,13 @@ def test_hotfixes_lists_hotfix_with_preceding(fixture_conn):
     assert hotfix_rows[0][1] == "#6"
 
 
-def test_metrics_registry_has_all_six():
+def test_metrics_registry_has_all():
     assert set(metrics.METRICS) == {
         "deploy-freq-prs",
         "deploy-freq",
         "lead-time",
         "change-failure-rate",
+        "change-failure-prs",
         "hotfixes",
         "summary",
     }

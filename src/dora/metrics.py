@@ -108,6 +108,33 @@ def m_change_failure_rate(conn: sqlite3.Connection, since: str):
     return [c[0] for c in cur.description], cur.fetchall()
 
 
+def m_change_failure_prs(conn: sqlite3.Connection, since: str):
+    """Individual PRs labelled `caused-incident`, with week + PR number.
+
+    Drill-down for change-failure-rate: the rate metric tells you how
+    often things go wrong; this metric tells you exactly which PRs.
+    Dashboard renders these as clickable links to the GitHub PR pages.
+    """
+    fail_expr = " OR ".join(f"labels LIKE '%{lab}%'" for lab in FAILURE_LABELS)
+    cur = conn.execute(
+        f"""
+        SELECT repo,
+               strftime('%Y-W%W', merged_at) AS week,
+               number AS pr,
+               author,
+               title,
+               substr(merged_at, 1, 10) AS merged
+        FROM pull_requests
+        WHERE merged_at IS NOT NULL
+          AND merged_at >= ?
+          AND ({fail_expr})
+        ORDER BY repo, week DESC, number DESC
+        """,
+        (since,),
+    )
+    return [c[0] for c in cur.description], cur.fetchall()
+
+
 def m_summary(conn: sqlite3.Connection, since: str):
     """Per-repo roll-up over the whole window."""
     repos = [
@@ -209,6 +236,10 @@ METRICS = {
         m_change_failure_rate,
         f"Weekly % of merged PRs labelled "
         f"{', '.join(f'`{l}`' for l in FAILURE_LABELS)}",
+    ),
+    "change-failure-prs": (
+        m_change_failure_prs,
+        "Individual `caused-incident` PRs (drill-down for change-failure-rate)",
     ),
     "hotfixes": (
         m_hotfixes,
