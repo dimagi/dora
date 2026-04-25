@@ -12,6 +12,7 @@ def test_run_report_returns_all_metrics_by_default(fixture_conn):
     assert names == {
         "deploy-freq-prs", "deploy-freq", "lead-time",
         "change-failure-rate", "change-failure-prs", "hotfixes", "summary",
+        "review-latency",
     }
 
 
