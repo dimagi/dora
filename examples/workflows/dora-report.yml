@@ -1,6 +1,13 @@
 # Copy this file into your repo at .github/workflows/dora-report.yml
-# Edit the `--since` date once on adoption. No other secrets needed
-# beyond the default GITHUB_TOKEN.
+# Edit the `--since` date once on adoption (used only on cold cache).
+#
+# How it works:
+#   - dora.db is persisted between runs via actions/cache. Subsequent
+#     runs only fetch new PRs/deployments — so the weekly run is fast.
+#   - On a cold cache (first run, or cache evicted after 7 days unused)
+#     the pull re-fetches everything since `--since` — slower (a few
+#     minutes for a year of history) but correct.
+#   - dora-report.json is regenerated from the DB and committed back.
 #
 # Once deployed, share this link internally:
 #   https://dimagi.github.io/dora/?url=https://raw.githubusercontent.com/<your-repo>/main/dora-report.json
@@ -18,6 +25,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
+
+      # Persist dora.db between runs. The key includes run_id so each run
+      # saves a fresh snapshot; restore-keys finds the most recent prior
+      # cache. Bump the v1 prefix to bust the cache (e.g. on schema change).
+      - name: Cache dora.db
+        uses: actions/cache@v4
+        with:
+          path: dora.db
+          key: dora-db-v1-${{ github.run_id }}
+          restore-keys: dora-db-v1-
 
       - name: Install dora
         run: uv tool install git+https://github.com/dimagi/dora
@@ -42,7 +59,18 @@ jobs:
           fi
 
 # --- S3 variant -------------------------------------------------------------
-# Replace the "Commit report" step with:
+# If you'd rather host both the DB and the report in S3 (no DB in CI cache,
+# no JSON in git history), replace the "Cache dora.db" and "Commit report"
+# steps with:
+#
+#       - name: Download dora.db from S3
+#         env:
+#           AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+#           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#           AWS_DEFAULT_REGION:    us-east-1
+#         run: |
+#           # First run: this 404s and we start with an empty DB. That's fine.
+#           aws s3 cp s3://my-bucket/dora.db ./dora.db || echo "no existing DB, starting fresh"
 #
 #       - name: Upload to S3
 #         env:
@@ -53,8 +81,9 @@ jobs:
 #           uv tool install "git+https://github.com/dimagi/dora[s3]"
 #           dora upload dora-report.json \
 #             --target s3://my-bucket/dora-report.json --public-read
+#           aws s3 cp dora.db s3://my-bucket/dora.db   # keep DB private
 #
-# S3 bucket CORS (so the dashboard can fetch from your bucket):
+# S3 bucket CORS (so the dashboard can fetch dora-report.json):
 #   [ { "AllowedOrigins": ["*"],
 #       "AllowedMethods": ["GET"],
 #       "AllowedHeaders": ["*"] } ]

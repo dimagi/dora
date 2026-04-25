@@ -227,7 +227,9 @@ python -m http.server 8000
 
 ### Template for adopting teams (`examples/workflows/dora-report.yml`)
 
-Teams copy this into their own repo at `.github/workflows/dora-report.yml`, edit the `--since` date, and commit. Runs weekly and pushes `dora-report.json` back to the repo:
+Teams copy this into their own repo at `.github/workflows/dora-report.yml`, edit the `--since` date, and commit. The DB is the source of truth — `report.json` is regenerated from it on every run.
+
+**DB persistence pattern:** `dora.db` is preserved between runs via `actions/cache`. Hot cache → `dora pull` only fetches new/changed PRs and refreshes transient deployment statuses (fast). Cold cache (first run, or 7+ days inactivity) → empty DB, full re-pull from `--since` (slow but correct). To bust the cache deliberately, bump the `v1` prefix in the cache key.
 
 ```yaml
 name: DORA metrics
@@ -242,6 +244,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
+      - uses: actions/cache@v4
+        with:
+          path: dora.db
+          key: dora-db-v1-${{ github.run_id }}
+          restore-keys: dora-db-v1-
       - run: uv tool install git+https://github.com/<owner>/dora
       - env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -264,22 +271,12 @@ https://<owner>.github.io/dora/?url=https://raw.githubusercontent.com/<team-repo
 
 ### S3 variant (also documented)
 
-Replace the commit step with:
-
-```yaml
-      - env:
-          AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION:    us-east-1
-        run: dora upload dora-report.json --target s3://my-bucket/dora-report.json --public-read
-```
-
-README includes the bucket CORS config snippet teams need (`AllowedOrigin: ["*"]`, `AllowedMethods: ["GET"]`).
+For teams that prefer guaranteed persistence (beyond the 7-day cache eviction window) or don't want JSON history in git, both `dora.db` and `dora-report.json` round-trip through S3. The DB stays private; only the JSON is `--public-read` so the dashboard can fetch it. README includes the bucket CORS config snippet teams need (`AllowedOrigin: ["*"]`, `AllowedMethods: ["GET"]`).
 
 ### Documented gotchas
 
 - `GITHUB_TOKEN` scope: the default is single-repo. Cross-repo aggregation (one team, multiple repos) requires a PAT or GitHub App installation token. Called out in README so teams don't discover it mid-setup.
-- `--since` date is explicit (not a relative date), matching current behavior and keeping "what window am I looking at" obvious.
+- `--since` date is explicit (not a relative date), matching current behavior and keeping "what window am I looking at" obvious. With the persistent-DB pattern, `--since` only matters on cold-cache restoration.
 
 ## Testing
 
@@ -311,9 +308,12 @@ Porting is a faithful move, not a rewrite. All existing behavior (caching logic,
 
 ## Future work (out of scope for first cut)
 
-1. **`dora merge`** — concatenate multiple `report.json` files, de-dupe on `(metric, repo, week)` keeping the latest. Enables "pull this week → merge into historical file" workflow.
-2. **Date-range filter in the dashboard** — from/to picker that narrows charts and tables client-side. Useful once reports accumulate more weeks.
-3. **`change-failure-rate-deploys`** — CFR derived from `failure`/`error` deployment statuses, as an objective counterpart to the label-based CFR.
-4. **Multi-report manifest** — dashboard loads a `manifest.json` listing all teams' reports with a switcher. Layer on top of the current single-report design.
-5. **MTTR pipeline** — needs an incident log schema the current collector can't produce.
-6. **PyPI release** — once the API stabilizes.
+1. **Date-range filter in the dashboard** — from/to picker that narrows charts and tables client-side. Useful once reports accumulate more weeks.
+2. **`change-failure-rate-deploys`** — CFR derived from `failure`/`error` deployment statuses, as an objective counterpart to the label-based CFR.
+3. **Multi-report manifest** — dashboard loads a `manifest.json` listing all teams' reports with a switcher. Layer on top of the current single-report design.
+4. **MTTR pipeline** — needs an incident log schema the current collector can't produce.
+5. **PyPI release** — once the API stabilizes.
+
+### Considered and deferred
+
+- **`dora merge`** — was on the original roadmap as a way to combine a bootstrapped historical `report.json` with weekly increments. After working through the use case, we decided the persistent-DB workflow (above) makes merge unnecessary for the primary single-team use case: the DB is the source of truth, the JSON is just a derived view, and `dora pull` already handles incremental updates via its caching layer. A merge command might still make sense later for cross-team/cross-repo aggregation (combining two independent teams' reports into a meta-dashboard), but that's a different design than weekly-increment merge and we'll revisit when the need shows up.

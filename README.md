@@ -52,9 +52,11 @@ Run `dora <subcommand> --help` for flags.
 Copy [`examples/workflows/dora-report.yml`](examples/workflows/dora-report.yml) to your repo's `.github/workflows/` directory. Edit the `--since` date once. The workflow:
 
 1. Runs weekly (cron) or on demand
-2. Pulls into a temporary SQLite DB
-3. Writes `dora-report.json`
-4. Commits the JSON back to your repo
+2. Restores `dora.db` from the Actions cache (or starts fresh on first run)
+3. Pulls new PRs/deployments since the last run
+4. Writes `dora-report.json` from the DB
+5. Saves the updated `dora.db` back to the cache
+6. Commits the JSON back to your repo
 
 Your dashboard link becomes:
 
@@ -62,15 +64,26 @@ Your dashboard link becomes:
 https://dimagi.github.io/dora/?url=https://raw.githubusercontent.com/<your-repo>/main/dora-report.json
 ```
 
+### How the DB cache works
+
+`dora.db` is the source of truth — `dora-report.json` is derived from it on every run. The DB is persisted between CI runs via [`actions/cache`](https://github.com/actions/cache):
+
+- **Hot cache (typical)**: `dora pull` only fetches PRs/deployments updated since the previous run, plus refreshes labels and transient deployment statuses. Fast.
+- **Cold cache (first run, or after 7+ days of inactivity)**: GitHub evicts the cache, the next run starts with an empty DB and re-pulls everything since `--since`. Slow but correct — typically a few minutes for a year of history.
+
+To bust the cache deliberately (e.g. if a future schema change requires it), bump the `v1` prefix in the workflow's cache `key`.
+
 ### Cross-repo reports
 
 The default `GITHUB_TOKEN` in Actions is scoped to the workflow's own repo. To aggregate multiple repos (`--repo a/b --repo c/d`), generate a PAT or install a GitHub App with access to each repo and pass its token via `GITHUB_TOKEN` in the env.
 
 ### S3 variant
 
-A commented S3 upload step is in the example workflow. You'll need:
+A commented S3 variant in the example workflow stores both `dora.db` and `dora-report.json` in S3 instead of using the cache + git-commit pattern. Useful if you'd rather not have JSON history in your git log, or if you want guaranteed persistence beyond the 7-day cache eviction window. You'll need:
+
 - `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` as repo secrets
-- Bucket CORS config allowing `GET` from `*` (so the dashboard can fetch)
+- Bucket CORS config allowing `GET` from `*` (so the dashboard can fetch the JSON)
+- The DB is stored privately; only the JSON is `--public-read`
 
 ## Metric definitions
 
