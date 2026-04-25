@@ -59,3 +59,21 @@ def test_report_via_python_m_module(fixture_db):
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert payload["metrics"][0]["metric"] == "summary"
+
+
+def test_cli_report_review_latency_json(fixture_db):
+    """`dora report --metric review-latency --format json` exits 0
+    and produces a parseable payload with the new metric."""
+    result = subprocess.run(
+        [sys.executable, "-m", "dora", "report",
+         "--db", str(fixture_db),
+         "--metric", "review-latency",
+         "--format", "json",
+         "--weeks", "12"],
+        capture_output=True, text=True, check=True,
+    )
+    payload = json.loads(result.stdout)
+    metric_names = [m["metric"] for m in payload["metrics"]]
+    assert "review-latency" in metric_names
+    rl = next(m for m in payload["metrics"] if m["metric"] == "review-latency")
+    assert all(r["bucket"] in {"XS", "S", "M", "L+"} for r in rl["data"])
