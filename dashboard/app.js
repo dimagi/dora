@@ -52,7 +52,8 @@ async function loadFromUrl(url, label) {
     const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const report = await res.json();
-    currentReport = report;
+    currentReport  = report;
+    currentMetrics = byMetric(report);
     localStorage.setItem(LS_KEY, url);
     urlInput.value = url;
     srcInfo.textContent = `Source: ${label || url}`;
@@ -68,7 +69,8 @@ async function loadFromFile(file) {
   showState({ load: true });
   try {
     const text = await file.text();
-    currentReport = JSON.parse(text);
+    currentReport  = JSON.parse(text);
+    currentMetrics = byMetric(currentReport);
     srcInfo.textContent = `Source: ${file.name} (local file)`;
     render();
   } catch (err) {
@@ -172,7 +174,7 @@ function render() {
   showState({});
   dash.hidden = false;
 
-  const metrics = byMetric(currentReport);
+  const metrics = currentMetrics;
   const repos = uniqueRepos(metrics);
 
   document.getElementById("since").textContent = currentReport.since || "—";
@@ -206,13 +208,15 @@ function render() {
 function renderForRepo(metrics, repo) {
   resetCharts();
 
-  const freqPrs     = filterByRepo(metrics["deploy-freq-prs"]     || [], repo);
-  const freqDeploys = filterByRepo(metrics["deploy-freq"]         || [], repo);
-  const leadTime    = filterByRepo(metrics["lead-time"]           || [], repo);
-  const cfr         = filterByRepo(metrics["change-failure-rate"] || [], repo);
-  const cfrPrs      = filterByRepo(metrics["change-failure-prs"]  || [], repo);
-  const hotfixes    = filterByRepo(metrics["hotfixes"]            || [], repo);
-  const summary     = filterByRepo(metrics["summary"]             || [], repo);
+  const freqPrs     = inRange(filterByRepo(metrics["deploy-freq-prs"]     || [], repo));
+  const freqDeploys = inRange(filterByRepo(metrics["deploy-freq"]         || [], repo));
+  const leadTime    = inRange(filterByRepo(metrics["lead-time"]           || [], repo));
+  const cfr         = inRange(filterByRepo(metrics["change-failure-rate"] || [], repo));
+  const cfrPrs      = inRange(filterByRepo(metrics["change-failure-prs"]  || [], repo));
+  const hotfixes    = inRangeHotfixes(filterByRepo(metrics["hotfixes"]    || [], repo));
+  // summary is not date-filterable; renderKPIs uses it only as a fallback,
+  // and that fallback is dropped when filtering is active (see renderKPIs).
+  const summary     = filterByRepo(metrics["summary"] || [], repo);
 
   renderKPIs(summary, freqPrs, freqDeploys, leadTime, cfr);
   renderFreqChart(freqPrs, freqDeploys);
@@ -223,62 +227,70 @@ function renderForRepo(metrics, repo) {
 }
 
 function renderKPIs(summary, freqPrs, freqDeploys, leadTime, cfr) {
-  const s = summary[0];
+  const filtering = currentFrom !== null && currentTo !== null;
+  const s = filtering ? null : summary[0];
 
-  // Deploy frequency: last 4 weeks of actual deploys, else PRs, else summary.
-  const recentDeploys = recentN(freqDeploys, 4);
-  const recentPrs     = recentN(freqPrs, 4);
+  // Deploy frequency.
+  // Filtering: average across the selected range (rows already filtered).
+  // Otherwise: last 4 weeks proxy.
+  const dRows = filtering ? freqDeploys : recentN(freqDeploys, 4);
+  const pRows = filtering ? freqPrs     : recentN(freqPrs, 4);
+  const denomDeploys = filtering ? Math.max(1, dRows.length) : 4;
+  const denomPrs     = filtering ? Math.max(1, pRows.length) : 4;
   const deployPerWk =
-    recentDeploys.length
-      ? recentDeploys.reduce((a, r) => a + (r.deploys || 0), 0) / 4
-      : recentPrs.length
-      ? recentPrs.reduce((a, r) => a + (r.deploys || 0), 0) / 4
+    dRows.length
+      ? dRows.reduce((a, r) => a + (r.deploys || 0), 0) / denomDeploys
+      : pRows.length
+      ? pRows.reduce((a, r) => a + (r.deploys || 0), 0) / denomPrs
       : s?.prs_per_week ?? null;
-  const deployUnit = recentDeploys.length ? " deploys/wk" : " merges/wk";
+  const deployUnit = dRows.length ? " deploys/wk" : " merges/wk";
 
-  // Lead time: last 4 weeks median, averaged. Fall back to summary.
-  const recentLead = recentN(leadTime, 4);
+  // Lead time.
+  const lRows = filtering ? leadTime : recentN(leadTime, 4);
   const leadMedian =
-    recentLead.length
-      ? recentLead.reduce((a, r) => a + (r.median_h || 0), 0) / recentLead.length
+    lRows.length
+      ? lRows.reduce((a, r) => a + (r.median_h || 0), 0) / lRows.length
       : s?.median_lead_h ?? null;
 
-  // CFR: all rows in window, total failures / total merges.
+  // CFR — totals across the (filtered) cfr rows.
   const totals = cfr.reduce(
     (acc, r) => ({ d: acc.d + (r.deploys || 0), f: acc.f + (r.failures || 0) }),
     { d: 0, f: 0 }
   );
   const cfrPct =
     totals.d > 0 ? (100 * totals.f) / totals.d
-    : s?.cfr != null ? parseFloat(String(s.cfr).replace("%", ""))
-    : null;
+    : (s?.cfr != null ? parseFloat(String(s.cfr).replace("%", "")) : null);
+
+  const subText     = filtering ? "in selected range"            : "last 4 weeks";
+  const leadSubText = filtering ? "median, in selected range"    : "median, last 4 wk";
+  const cfrSubText  = filtering ? "in selected range"            : "across window";
 
   document.getElementById("kpis").innerHTML = [
     kpiCard({
       label: "Deploy frequency",
       value: deployPerWk != null ? deployPerWk.toFixed(1) : "—",
       unit: deployUnit,
-      subText: "last 4 weeks",
+      subText,
       tier: deployFreqTier(deployPerWk),
-      info: recentDeploys.length
-        ? "Average successful deploys per week, last 4 weeks. Source: GitHub Deployments API for the configured environment (success + inactive statuses)."
-        : "Average merged PRs per week (proxy for shipped changes), last 4 weeks. Source: PRs merged into the base branch — used because no Deployments are recorded.",
+      info: dRows.length
+        ? "Average successful deploys per week. Source: GitHub Deployments API for the configured environment (success + inactive statuses)."
+        : "Average merged PRs per week (proxy for shipped changes). Source: PRs merged into the base branch — used because no Deployments are recorded.",
     }),
     kpiCard({
       label: "Lead time",
       value: leadMedian != null ? Math.round(leadMedian).toString() : "—",
       unit: " h",
-      subText: "median, last 4 wk",
+      subText: leadSubText,
       tier: leadTimeTier(leadMedian),
-      info: "Median hours from first commit on a PR's branch to its merge into the base branch, averaged over the last 4 weeks. Source: PR commits + merge timestamp from the GitHub API.",
+      info: "Median hours from first commit on a PR's branch to its merge into the base branch, averaged across the window. Source: PR commits + merge timestamp from the GitHub API.",
     }),
     kpiCard({
       label: "Change failure rate",
       value: cfrPct != null ? cfrPct.toFixed(0) : "—",
       unit: " %",
-      subText: "across window",
+      subText: cfrSubText,
       tier: cfrTier(cfrPct),
-      info: "Across the full window: PRs labelled `caused-incident` ÷ all merged PRs. Apply the label to the PR that SHIPPED the defect (not the PR that fixed it). See the drill-down list below the chart.",
+      info: "PRs labelled `caused-incident` ÷ all merged PRs across the window. Apply the label to the PR that SHIPPED the defect (not the PR that fixed it). See the drill-down list below the chart.",
     }),
     kpiCard({
       label: "Mean time to restore",
