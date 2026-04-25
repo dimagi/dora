@@ -69,28 +69,35 @@ def init_db(path: str | Path) -> sqlite3.Connection:
 def upsert_pr(conn: sqlite3.Connection, repo: str, pr: dict) -> None:
     """Insert or update a PR row.
 
-    COALESCE on first_commit_at: a subsequent upsert that omits the field
-    (pr["first_commit_at"] is None) preserves the existing value. Lets the
-    pull script skip the expensive /pulls/{n}/commits call for PRs it has
-    already seen.
+    COALESCE on first_commit_at, additions, deletions, changed_files, and
+    ready_for_review_at: a subsequent upsert that omits these (passes None)
+    preserves the existing value. Lets the pull script skip the expensive
+    per-PR API calls for PRs it has already seen.
     """
     conn.execute(
         """
         INSERT INTO pull_requests
             (repo, number, title, author, base, opened_at, merged_at,
-             first_commit_at, merge_sha, labels)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             first_commit_at, merge_sha, labels,
+             additions, deletions, changed_files, ready_for_review_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(repo, number) DO UPDATE SET
-            title           = excluded.title,
-            merged_at       = excluded.merged_at,
-            first_commit_at = COALESCE(excluded.first_commit_at, pull_requests.first_commit_at),
-            merge_sha       = excluded.merge_sha,
-            labels          = excluded.labels
+            title               = excluded.title,
+            merged_at           = excluded.merged_at,
+            first_commit_at     = COALESCE(excluded.first_commit_at,     pull_requests.first_commit_at),
+            merge_sha           = excluded.merge_sha,
+            labels              = excluded.labels,
+            additions           = COALESCE(excluded.additions,           pull_requests.additions),
+            deletions           = COALESCE(excluded.deletions,           pull_requests.deletions),
+            changed_files       = COALESCE(excluded.changed_files,       pull_requests.changed_files),
+            ready_for_review_at = COALESCE(excluded.ready_for_review_at, pull_requests.ready_for_review_at)
         """,
         (
             repo, pr["number"], pr["title"], pr["author"], pr["base"],
             pr["opened_at"], pr["merged_at"], pr["first_commit_at"],
             pr["merge_sha"], pr["labels"],
+            pr["additions"], pr["deletions"], pr["changed_files"],
+            pr["ready_for_review_at"],
         ),
     )
 
