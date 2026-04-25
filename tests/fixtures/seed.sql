@@ -14,7 +14,7 @@
 --
 -- review-latency values (merged_at - COALESCE(ready_for_review_at, opened_at) in hours):
 --   PR 1: changed_files=1  → bucket XS, 34h
---   PR 2: changed_files=3  → bucket S,  44h  (ready_for_review_at = opened+10h, draft case)
+--   PR 2: changed_files=3  → bucket S,  34h  (ready_for_review_at = opened+10h, draft case)
 --   PR 3: changed_files=7  → bucket M,  30h
 --   PR 4: changed_files=1  → bucket XS, 5h
 --   PR 5: changed_files=25 → bucket L+, 15h

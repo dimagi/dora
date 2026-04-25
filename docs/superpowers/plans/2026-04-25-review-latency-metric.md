@@ -491,7 +491,7 @@ The fixture data, by bucket:
 | Bucket | PRs | Per-PR review window (h) |
 |--------|-----|---------------------------|
 | W41 acme/api XS | PR 1 | 34h |
-| W41 acme/api S  | PR 2 | 44h (uses ready_for_review_at, not opened_at) |
+| W41 acme/api S  | PR 2 | 34h (uses ready_for_review_at, not opened_at) |
 | W41 acme/api M  | PR 3 | 30h |
 | W42 acme/api XS | PR 4 | 5h |
 | W42 acme/api L+ | PR 5 | 15h |
