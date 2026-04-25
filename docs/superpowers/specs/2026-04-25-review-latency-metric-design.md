@@ -126,9 +126,11 @@ New 5th panel inside `<section class="panels">`, sibling to the existing four (D
 
 `app.js` gains a renderer keyed by metric name `review-latency`, registered in the existing dispatch. The spec's "unknown metrics fall back to a raw table" rule means a CLI-first rollout to a team that hasn't pulled the new dashboard still gets the raw weekly numbers — graceful degradation, no broken dashboard.
 
-### Detail table
+### Where `p90_h` lives
 
-The collapsible "Weekly metrics (raw, sortable)" section already iterates over every metric and renders a sortable table — `review-latency` rows show up there automatically. **This is where `p90_h` lives.** The main chart shows median only.
+The main chart shows `median_h` only. `p90_h` is preserved in the row and ends up in the JSON output (`dora report --format json` and `dashboard/fixtures/sample.json`), accessible to anyone who wants the tail. The dashboard panel itself doesn't render a tail visualization.
+
+The original 2026-04-24 design sketch mentioned a collapsible "Weekly metrics (raw, sortable)" section, but that section was never built in the first cut. If/when a generic raw-table renderer is added, it'll pick up `p90_h` automatically since the column is already in the metric output.
 
 ### Filters
 
