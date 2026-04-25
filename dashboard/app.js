@@ -54,6 +54,8 @@ async function loadFromUrl(url, label) {
     const report = await res.json();
     currentReport  = report;
     currentMetrics = byMetric(report);
+    weeksAxis      = computeWeeksAxis(report);
+    initRangeFromData();
     localStorage.setItem(LS_KEY, url);
     urlInput.value = url;
     srcInfo.textContent = `Source: ${label || url}`;
@@ -71,6 +73,8 @@ async function loadFromFile(file) {
     const text = await file.text();
     currentReport  = JSON.parse(text);
     currentMetrics = byMetric(currentReport);
+    weeksAxis      = computeWeeksAxis(currentReport);
+    initRangeFromData();
     srcInfo.textContent = `Source: ${file.name} (local file)`;
     render();
   } catch (err) {
@@ -596,6 +600,77 @@ function writeRangeToUrl() {
   history.replaceState({}, "", newUrl);
 }
 
+// --------- date range UI ---------
+
+const rangeRow      = document.getElementById("range-row");
+const presetsEl     = document.getElementById("presets");
+const rangeFromIn   = document.getElementById("range-from");
+const rangeToIn     = document.getElementById("range-to");
+const rangeFromLbl  = document.getElementById("range-from-label");
+const rangeToLbl    = document.getElementById("range-to-label");
+const rsFill        = document.getElementById("rs-fill");
+
+/** Update the slider DOM (input values, fill div, labels, preset highlight)
+ *  to match the current state. Does NOT trigger re-render or URL sync. */
+function syncRangeUI() {
+  if (!weeksAxis.length) return;
+  const fromIdx = weeksAxis.indexOf(currentFrom);
+  const toIdx   = weeksAxis.indexOf(currentTo);
+  rangeFromIn.value = String(fromIdx >= 0 ? fromIdx : 0);
+  rangeToIn.value   = String(toIdx   >= 0 ? toIdx   : weeksAxis.length - 1);
+  rangeFromLbl.textContent = currentFrom;
+  rangeToLbl.textContent   = currentTo;
+
+  const max = weeksAxis.length - 1;
+  const fromPct = max > 0 ? (parseInt(rangeFromIn.value) / max) * 100 : 0;
+  const toPct   = max > 0 ? (parseInt(rangeToIn.value)   / max) * 100 : 100;
+  rsFill.style.left  = `${fromPct}%`;
+  rsFill.style.width = `${toPct - fromPct}%`;
+
+  const matched = rangeMatchesPreset(currentFrom, currentTo);
+  for (const btn of presetsEl.querySelectorAll("button")) {
+    btn.classList.toggle("active", btn.dataset.preset === matched);
+  }
+}
+
+/** Apply a [from, to] selection: clamp, set state, sync UI, write URL, render. */
+function setRange(from, to, { writeUrl = true } = {}) {
+  if (!weeksAxis.length) return;
+  const earliest = weeksAxis[0];
+  const latest   = weeksAxis[weeksAxis.length - 1];
+  if (from < earliest) from = earliest;
+  if (to   > latest)   to   = latest;
+  if (from > to) [from, to] = [to, from];
+  currentFrom = from;
+  currentTo   = to;
+  syncRangeUI();
+  if (writeUrl) writeRangeToUrl();
+  if (currentMetrics) renderForRepo(currentMetrics, currentRepo);
+}
+
+/** Initialize the range from URL params or fall back to the default preset.
+ *  Called once per data load. */
+function initRangeFromData() {
+  if (!weeksAxis.length) {
+    rangeRow.hidden = true;
+    return;
+  }
+  const max = weeksAxis.length - 1;
+  rangeFromIn.min = "0";
+  rangeFromIn.max = String(max);
+  rangeToIn.min   = "0";
+  rangeToIn.max   = String(max);
+
+  const [urlFrom, urlTo] = parseRangeFromUrl();
+  if (urlFrom && urlTo) {
+    setRange(urlFrom, urlTo, { writeUrl: false });
+  } else {
+    const [pFrom, pTo] = computePresetRange(DEFAULT_PRESET_ID);
+    setRange(pFrom, pTo, { writeUrl: false });
+  }
+  rangeRow.hidden = false;
+}
+
 // --------- wire up ---------
 
 urlBtn.addEventListener("click", () => {
@@ -609,6 +684,29 @@ fileInput.addEventListener("change", (e) => {
   const f = e.target.files?.[0];
   if (f) loadFromFile(f);
 });
+
+// Preset buttons.
+presetsEl.addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-preset]");
+  if (!btn) return;
+  const [from, to] = computePresetRange(btn.dataset.preset);
+  if (from && to) setRange(from, to);
+});
+
+// Slider drag — enforce from <= to and re-render on input.
+function onSliderInput() {
+  let fromIdx = parseInt(rangeFromIn.value, 10);
+  let toIdx   = parseInt(rangeToIn.value, 10);
+  if (fromIdx > toIdx) {
+    if (document.activeElement === rangeFromIn) toIdx = fromIdx;
+    else                                        fromIdx = toIdx;
+  }
+  rangeFromIn.value = String(fromIdx);
+  rangeToIn.value   = String(toIdx);
+  setRange(weeksAxis[fromIdx], weeksAxis[toIdx]);
+}
+rangeFromIn.addEventListener("input", onSliderInput);
+rangeToIn.addEventListener("input",   onSliderInput);
 
 const src = decideInitialSource();
 loadFromUrl(src.url, src.label);
