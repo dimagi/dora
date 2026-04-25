@@ -14,6 +14,25 @@ import statistics
 # not counted) to avoid double-counting a single failure.
 FAILURE_LABELS = ("caused-incident",)
 
+# Review-latency size buckets, by `changed_files`.
+# (label, lower_inclusive, upper_inclusive_or_None_for_open)
+BUCKETS: tuple[tuple[str, int, int | None], ...] = (
+    ("XS", 1, 1),
+    ("S",  2, 3),
+    ("M",  4, 9),
+    ("L+", 10, None),
+)
+
+
+def _assign_bucket(changed_files: int | None) -> str | None:
+    """Return the bucket label for a given file count, or None if unbucketable."""
+    if changed_files is None or changed_files < 1:
+        return None
+    for label, lo, hi in BUCKETS:
+        if changed_files >= lo and (hi is None or changed_files <= hi):
+            return label
+    return None
+
 # GitHub auto-marks old successful deployments as `inactive` when newer
 # deploys supersede them — so over any time window, most historically-
 # successful deploys show up as `inactive`, not `success`.
@@ -184,6 +203,52 @@ def m_summary(conn: sqlite3.Connection, since: str):
     return ["repo", "prs", "prs_per_week", "median_lead_h", "cfr"], rows
 
 
+def m_review_latency(conn: sqlite3.Connection, since: str):
+    """Weekly review latency in hours, bucketed by changed_files.
+
+    review_window = merged_at − COALESCE(ready_for_review_at, opened_at)
+
+    Buckets: XS=1, S=2-3, M=4-9, L+=10+ files. PRs with NULL changed_files
+    are excluded (legacy DB rows from before the schema migration).
+
+    Aggregation in Python because SQLite has no PERCENTILE_CONT; p90 is
+    nearest-rank (fine for small weekly samples). Same shape as m_lead_time.
+    """
+    cur = conn.execute(
+        """
+        SELECT repo,
+               strftime('%Y-W%W', merged_at) AS week,
+               changed_files,
+               (julianday(merged_at)
+                - julianday(COALESCE(ready_for_review_at, opened_at))) * 24.0 AS hours
+        FROM pull_requests
+        WHERE merged_at     IS NOT NULL
+          AND changed_files IS NOT NULL
+          AND merged_at >= ?
+        """,
+        (since,),
+    )
+    buckets: dict[tuple[str, str, str], list[float]] = {}
+    for repo, week, files, hours in cur:
+        bucket = _assign_bucket(files)
+        if bucket is None or hours is None or hours < 0:
+            continue
+        buckets.setdefault((repo, week, bucket), []).append(hours)
+
+    bucket_order = {label: i for i, (label, _, _) in enumerate(BUCKETS)}
+    rows = []
+    for (repo, week, bucket), vals in sorted(
+        buckets.items(),
+        key=lambda kv: (kv[0][0], kv[0][1], bucket_order[kv[0][2]]),
+    ):
+        vals.sort()
+        median = statistics.median(vals)
+        p90    = vals[min(len(vals) - 1, int(len(vals) * 0.9))]
+        rows.append((repo, week, bucket, len(vals),
+                     round(median, 1), round(p90, 1)))
+    return ["repo", "week", "bucket", "n_prs", "median_h", "p90_h"], rows
+
+
 def m_hotfixes(conn: sqlite3.Connection, since: str):
     """Each hotfix PR plus its 3 preceding merges — investigative tool."""
     hotfixes = conn.execute(
@@ -248,5 +313,9 @@ METRICS = {
     "summary": (
         m_summary,
         "Per-repo roll-up over the whole window",
+    ),
+    "review-latency": (
+        m_review_latency,
+        "Weekly review latency in hours (merged − ready_for_review_at | opened_at), bucketed by changed_files (XS=1, S=2-3, M=4-9, L+=10+)",
     ),
 }
