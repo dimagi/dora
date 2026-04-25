@@ -78,6 +78,24 @@ def iso_to_dt(s: str) -> datetime:
     return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
 
+def _fetch_ready_for_review_at(
+    session: requests.Session,
+    repo: str,
+    number: int,
+) -> str | None:
+    """Return the timestamp of the first `ready_for_review` event, or None.
+
+    A PR that was never a draft has no `ready_for_review` event in its
+    timeline; we return None and let the metric COALESCE down to opened_at.
+    A PR toggled draft → ready → draft → ready returns the FIRST ready
+    event (most conservative — longest review window).
+    """
+    for ev in gh(session, f"/repos/{repo}/issues/{number}/timeline"):
+        if ev.get("event") == "ready_for_review":
+            return ev.get("created_at")
+    return None
+
+
 def fetch_prs(
     session: requests.Session,
     repo: str,

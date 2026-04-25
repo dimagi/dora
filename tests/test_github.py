@@ -76,6 +76,52 @@ def test_gh_sleeps_and_retries_on_rate_limit(requests_mock, monkeypatch):
     assert slept and slept[0] >= 5
 
 
+def test_fetch_ready_for_review_at_first_page(requests_mock):
+    base = "https://api.github.com"
+    requests_mock.get(
+        f"{base}/repos/x/y/issues/1/timeline",
+        json=[
+            {"event": "labeled",            "created_at": "2025-10-10T00:00:00Z"},
+            {"event": "ready_for_review",   "created_at": "2025-10-10T05:00:00Z"},
+            {"event": "reviewed",           "created_at": "2025-10-10T08:00:00Z"},
+        ],
+    )
+    session = requests.Session()
+    out = github._fetch_ready_for_review_at(session, "x/y", 1)
+    assert out == "2025-10-10T05:00:00Z"
+
+
+def test_fetch_ready_for_review_at_no_event(requests_mock):
+    base = "https://api.github.com"
+    requests_mock.get(
+        f"{base}/repos/x/y/issues/2/timeline",
+        json=[
+            {"event": "labeled",  "created_at": "2025-10-10T00:00:00Z"},
+            {"event": "reviewed", "created_at": "2025-10-10T08:00:00Z"},
+        ],
+    )
+    session = requests.Session()
+    out = github._fetch_ready_for_review_at(session, "x/y", 2)
+    assert out is None
+
+
+def test_fetch_ready_for_review_at_paginates(requests_mock):
+    """Event lives on page 2 — the paginator must follow Link rel=next."""
+    base = "https://api.github.com"
+    requests_mock.get(
+        f"{base}/repos/x/y/issues/3/timeline",
+        json=[{"event": "labeled", "created_at": "2025-10-10T00:00:00Z"}],
+        headers={"Link": f'<{base}/repos/x/y/issues/3/timeline?page=2>; rel="next"'},
+    )
+    requests_mock.get(
+        f"{base}/repos/x/y/issues/3/timeline?page=2",
+        json=[{"event": "ready_for_review", "created_at": "2025-10-11T03:00:00Z"}],
+    )
+    session = requests.Session()
+    out = github._fetch_ready_for_review_at(session, "x/y", 3)
+    assert out == "2025-10-11T03:00:00Z"
+
+
 # --- fetch_prs ------------------------------------------------------------
 
 def test_fetch_prs_filters_to_merged_within_window(requests_mock):
