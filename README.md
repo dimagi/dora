@@ -2,6 +2,8 @@
 
 [![Tests](https://github.com/dimagi/dora/actions/workflows/test.yml/badge.svg)](https://github.com/dimagi/dora/actions/workflows/test.yml)
 
+**▶ [View the dashboard](https://dimagi.github.io/dora/)** — point it at any `report.json` via `?url=…` or upload directly.
+
 A Python CLI that pulls the four DORA metrics — deployment frequency, lead time for changes, change failure rate, and a hotfix investigation helper — from the GitHub API, and a static dashboard (GitHub Pages) that renders the resulting `report.json`.
 
 Designed for team adoption: you run the CLI on your own repo (locally or from CI), produce a `report.json`, and share a link to the central dashboard pointing at your data.

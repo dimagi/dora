@@ -121,6 +121,13 @@ header.top {
   padding: 4px 8px;
   border-radius: 6px;
 }
+.source-link {
+  font-size: 12px;
+  color: var(--text-soft);
+  text-decoration: none;
+  margin-top: 2px;
+}
+.source-link:hover { color: var(--accent); }
 
 /* Source loader */
 .source-row {
