@@ -17,9 +17,24 @@ const errorEl  = document.getElementById("error");
 const errorMsg = document.getElementById("error-msg");
 const dash     = document.getElementById("dashboard");
 
-let currentReport = null;
-let currentRepo   = null;
-let charts        = [];
+let currentReport  = null;
+let currentMetrics = null;       // byMetric(currentReport) — kept so we can re-render on range change
+let currentRepo    = null;
+let charts         = [];
+
+// Date range state.
+// weeksAxis is the sorted union of `week` values across all metrics.
+let weeksAxis    = [];
+let currentFrom  = null;         // ISO week string, e.g. "2025-W42"
+let currentTo    = null;         // ISO week string
+
+const PRESETS = [
+  { id: "4",   weeks: 4,    label: "4w"  },
+  { id: "12",  weeks: 12,   label: "12w" },
+  { id: "26",  weeks: 26,   label: "26w" },
+  { id: "all", weeks: null, label: "All" },
+];
+const DEFAULT_PRESET_ID = "12";
 
 // --------- source loading ---------
 
@@ -437,6 +452,136 @@ function renderHotfixes(rows) {
     }
   }
   el.innerHTML = html;
+}
+
+// --------- date range helpers ---------
+
+/** Sorted unique week values across all metrics that have a `week` field. */
+function computeWeeksAxis(report) {
+  const s = new Set();
+  for (const m of report.metrics || []) {
+    for (const r of (m.data || [])) {
+      if (r.week) s.add(r.week);
+    }
+  }
+  return [...s].sort();
+}
+
+/** Filter rows to those whose `week` is in [currentFrom, currentTo]. */
+function inRange(rows) {
+  if (!currentFrom || !currentTo) return rows;
+  return rows.filter(r => {
+    if (!r.week) return true;
+    return r.week >= currentFrom && r.week <= currentTo;
+  });
+}
+
+/** Convert an ISO week ("2025-W42") to its Monday's date string ("2025-10-13").
+ *  Used for hotfix rows which carry `merged` (date) instead of `week`. */
+function weekToMondayDate(weekStr) {
+  const m = /^(\d{4})-W(\d{2})$/.exec(weekStr);
+  if (!m) return null;
+  const year = parseInt(m[1], 10);
+  // SQLite strftime('%W'): week 00 = days before first Monday; week N starts
+  // on the Nth Monday after week 00. So "2025-W42" Monday = first Monday of 2025
+  // + 41 weeks. JS month is 0-indexed.
+  const jan1 = new Date(Date.UTC(year, 0, 1));
+  const jan1Day = jan1.getUTCDay();             // 0 = Sun, 1 = Mon, ...
+  const daysToFirstMonday = (jan1Day === 1) ? 0 : (8 - jan1Day) % 7;
+  const firstMonday = new Date(jan1);
+  firstMonday.setUTCDate(jan1.getUTCDate() + daysToFirstMonday);
+  const target = new Date(firstMonday);
+  target.setUTCDate(firstMonday.getUTCDate() + (parseInt(m[2], 10) - 1) * 7);
+  return target.toISOString().slice(0, 10);
+}
+
+/** Filter hotfix rows: keep each `hotfix` row in range AND its trailing
+ *  `preceded-by` rows (groups stay intact even if the prev row's date
+ *  is technically outside the window). */
+function inRangeHotfixes(rows) {
+  if (!currentFrom || !currentTo) return rows;
+  const fromDate = weekToMondayDate(currentFrom);
+  const toDate   = weekToMondayDate(currentTo);
+  if (!fromDate || !toDate) return rows;
+  // Add 6 days to toDate to include the whole "to" week.
+  const toEnd = (() => {
+    const d = new Date(toDate + "T00:00:00Z");
+    d.setUTCDate(d.getUTCDate() + 6);
+    return d.toISOString().slice(0, 10);
+  })();
+  const out = [];
+  let keepGroup = false;
+  for (const r of rows) {
+    if (r.relation === "hotfix") {
+      keepGroup = r.merged >= fromDate && r.merged <= toEnd;
+      if (keepGroup) out.push(r);
+    } else if (keepGroup) {
+      out.push(r);
+    }
+  }
+  return out;
+}
+
+/** Compute [from, to] for a preset clicked on the current data.
+ *  Preset "all" → full data extent; numeric → last N weeks ending at latestWeek. */
+function computePresetRange(presetId) {
+  if (!weeksAxis.length) return [null, null];
+  const earliest = weeksAxis[0];
+  const latest   = weeksAxis[weeksAxis.length - 1];
+  if (presetId === "all") return [earliest, latest];
+  const n = parseInt(presetId, 10);
+  if (!Number.isFinite(n) || n <= 0) return [earliest, latest];
+  const startIdx = Math.max(0, weeksAxis.length - n);
+  return [weeksAxis[startIdx], latest];
+}
+
+/** Find the preset whose [from, to] matches the current selection (if any). */
+function rangeMatchesPreset(from, to) {
+  for (const p of PRESETS) {
+    const [pFrom, pTo] = computePresetRange(p.id);
+    if (pFrom === from && pTo === to) return p.id;
+  }
+  return null;
+}
+
+/** Read ?from=&to= from the URL, clamped/validated against weeksAxis.
+ *  Returns [from, to] or [null, null] if no params and no fallback wanted. */
+function parseRangeFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  let from = params.get("from");
+  let to   = params.get("to");
+  const valid = w => /^\d{4}-W\d{2}$/.test(w);
+  from = valid(from) ? from : null;
+  to   = valid(to)   ? to   : null;
+  if (!from && !to) return [null, null];
+  if (!weeksAxis.length) return [null, null];
+  const earliest = weeksAxis[0];
+  const latest   = weeksAxis[weeksAxis.length - 1];
+  if (!from) from = earliest;
+  if (!to)   to   = latest;
+  if (from > to) [from, to] = [to, from];
+  if (from < earliest) from = earliest;
+  if (to   > latest)   to   = latest;
+  return [from, to];
+}
+
+/** Update the URL's ?from=&to= to match the current range. Drops both params
+ *  when the range covers the full data extent (clean URLs stay clean). */
+function writeRangeToUrl() {
+  if (!weeksAxis.length) return;
+  const params = new URLSearchParams(window.location.search);
+  const earliest = weeksAxis[0];
+  const latest   = weeksAxis[weeksAxis.length - 1];
+  if (currentFrom === earliest && currentTo === latest) {
+    params.delete("from");
+    params.delete("to");
+  } else {
+    params.set("from", currentFrom);
+    params.set("to",   currentTo);
+  }
+  const qs = params.toString();
+  const newUrl = window.location.pathname + (qs ? `?${qs}` : "") + window.location.hash;
+  history.replaceState({}, "", newUrl);
 }
 
 // --------- wire up ---------
