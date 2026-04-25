@@ -9,275 +9,389 @@ const urlInput  = document.getElementById("url-input");
 const urlBtn    = document.getElementById("url-load");
 const fileInput = document.getElementById("file-input");
 const srcInfo   = document.getElementById("source-info");
-const repoSel   = document.getElementById("repo-filter");
-const repoLabel = document.querySelector(".repo-label");
-const empty     = document.getElementById("empty-state");
+const repoPicker = document.getElementById("repo-picker");
+const repoSel   = document.getElementById("repo-select");
+
+const loading  = document.getElementById("loading");
+const errorEl  = document.getElementById("error");
+const errorMsg = document.getElementById("error-msg");
+const dash     = document.getElementById("dashboard");
 
 let currentReport = null;
-let currentSource = null;
 let currentRepo   = null;
+let charts        = [];
 
 // --------- source loading ---------
 
-function setEmpty(show) {
-  empty.hidden = !show;
+function showState({ load = false, err = null }) {
+  loading.hidden = !load;
+  errorEl.hidden = !err;
+  if (err) errorMsg.textContent = err;
+  if (load || err) dash.hidden = true;
 }
 
 async function loadFromUrl(url, label) {
+  showState({ load: true });
   srcInfo.textContent = `Loading ${label || url}…`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    srcInfo.textContent = `Failed to load ${label || url}: ${res.status}`;
-    setEmpty(true);
-    return;
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const report = await res.json();
+    currentReport = report;
+    localStorage.setItem(LS_KEY, url);
+    urlInput.value = url;
+    srcInfo.textContent = `Source: ${label || url}`;
+    render();
+  } catch (err) {
+    console.error(err);
+    showState({ err: `${label || url}: ${err.message}` });
+    srcInfo.textContent = "";
   }
-  const report = await res.json();
-  currentReport = report;
-  currentSource = { kind: "url", url, label };
-  localStorage.setItem(LS_KEY, url);
-  render();
-  srcInfo.textContent = `Source: ${label || url} · loaded just now`;
-  setEmpty(false);
 }
 
 async function loadFromFile(file) {
-  const text = await file.text();
-  currentReport = JSON.parse(text);
-  currentSource = { kind: "file", name: file.name };
-  render();
-  srcInfo.textContent = `Source: ${file.name} (local file)`;
-  setEmpty(false);
+  showState({ load: true });
+  try {
+    const text = await file.text();
+    currentReport = JSON.parse(text);
+    srcInfo.textContent = `Source: ${file.name} (local file)`;
+    render();
+  } catch (err) {
+    console.error(err);
+    showState({ err: `${file.name}: ${err.message}` });
+  }
 }
 
 function decideInitialSource() {
   const params = new URLSearchParams(window.location.search);
-  const qsUrl = params.get("url");
-  if (qsUrl) return { kind: "url", url: qsUrl, label: qsUrl };
+  const qsUrl = params.get("url") || params.get("data");  // ?data= legacy
+  if (qsUrl) return { url: qsUrl, label: qsUrl };
 
   const remembered = localStorage.getItem(LS_KEY);
-  if (remembered) return { kind: "url", url: remembered, label: `${remembered} (remembered)` };
+  if (remembered) return { url: remembered, label: `${remembered} (remembered)` };
 
-  return { kind: "url", url: "fixtures/sample.json", label: "sample (demo data)" };
+  return { url: "fixtures/sample.json", label: "sample (demo data)" };
 }
 
-// --------- repo filter ---------
+// --------- helpers ---------
 
-function rowsForRepo(data) {
-  if (!currentRepo) return data;
-  return data.filter(r => r.repo === currentRepo);
+function byMetric(report) {
+  const out = {};
+  for (const m of report.metrics || []) out[m.metric] = m.data || [];
+  return out;
 }
 
-function populateRepoFilter() {
-  if (!currentReport) return;
-  const repos = new Set();
-  for (const m of currentReport.metrics) {
-    for (const row of m.data) if (row.repo) repos.add(row.repo);
+function uniqueRepos(metrics) {
+  const s = new Set();
+  for (const rows of Object.values(metrics)) {
+    for (const r of rows) if (r.repo) s.add(r.repo);
   }
-  if (repos.size <= 1) {
-    repoSel.hidden   = true;
-    repoLabel.hidden = true;
-    currentRepo      = null;
-    return;
-  }
-  repoSel.innerHTML = "";
-  for (const repo of [...repos].sort()) {
-    const opt = document.createElement("option");
-    opt.value = opt.textContent = repo;
-    repoSel.append(opt);
-  }
-  repoSel.hidden   = false;
-  repoLabel.hidden = false;
-  currentRepo      = repoSel.value;
+  return [...s].sort();
 }
 
-// --------- render dispatch ---------
-
-function render() {
-  populateRepoFilter();
-  renderSummary();
-  renderCharts();
-  renderDetailTables();
-  renderHotfixes();
+function filterByRepo(rows, repo) {
+  return repo ? rows.filter(r => r.repo === repo) : rows;
 }
 
-// --------- summary tiles ---------
-
-function renderSummary() {
-  const el = document.getElementById("summary");
-  el.innerHTML = "";
-  const metric = currentReport.metrics.find(m => m.metric === "summary");
-  if (!metric) return;
-  const rows = rowsForRepo(metric.data);
-  if (rows.length === 0) return;
-  const r = rows[0];
-  const tiles = [
-    { label: "PRs",             value: r.prs ?? "—" },
-    { label: "PRs / week",      value: r.prs_per_week ?? "—" },
-    { label: "Median lead (h)", value: r.median_lead_h ?? "—" },
-    { label: "CFR",             value: r.cfr ?? "—" },
-  ];
-  for (const t of tiles) {
-    const div = document.createElement("div");
-    div.className = "tile";
-    div.innerHTML = `<div class="label">${escapeHtml(t.label)}</div>` +
-                    `<div class="value">${escapeHtml(String(t.value))}</div>`;
-    el.append(div);
-  }
+function recentN(rows, n, keyFn = r => r.week) {
+  // Rows keyed by ISO week string like "2026-W14" — sorts lexicographically.
+  return [...rows].sort((a, b) => (keyFn(a) < keyFn(b) ? 1 : -1)).slice(0, n);
 }
 
-// --------- charts ---------
-
-const charts = {};
-
-function destroyChart(id) {
-  if (charts[id]) {
-    charts[id].destroy();
-    delete charts[id];
-  }
+// DORA tier bands (approximate — simplified from the official report).
+function deployFreqTier(perWeek) {
+  if (perWeek == null) return "na";
+  if (perWeek >= 7) return "elite";    // >1/day
+  if (perWeek >= 1) return "high";     // >=1/week
+  if (perWeek >= 0.25) return "medium"; // >=1/month
+  return "low";
+}
+function leadTimeTier(hours) {
+  if (hours == null) return "na";
+  if (hours < 24) return "elite";
+  if (hours < 168) return "high";
+  if (hours < 720) return "medium";
+  return "low";
+}
+function cfrTier(pct) {
+  if (pct == null) return "na";
+  if (pct <= 15) return "elite";
+  if (pct <= 30) return "high";
+  if (pct <= 45) return "medium";
+  return "low";
 }
 
-function weekAxis(rows) {
-  return [...new Set(rows.map(r => r.week))].sort();
+const TIER_LABEL = { elite: "Elite", high: "High", medium: "Medium", low: "Low", na: "N/A" };
+
+function kpiCard({ label, value, unit, subText, tier }) {
+  return `
+    <div class="kpi">
+      <span class="kpi-label">${escapeHtml(label)}</span>
+      <span class="kpi-value">${escapeHtml(value)}<span class="kpi-unit">${escapeHtml(unit || "")}</span></span>
+      <span class="kpi-sub"><span class="tier tier-${tier}">${TIER_LABEL[tier]}</span>${escapeHtml(subText)}</span>
+    </div>
+  `;
 }
-
-function makeLineChart(canvasId, labels, datasets, yLabel) {
-  destroyChart(canvasId);
-  const ctx = document.getElementById(canvasId).getContext("2d");
-  charts[canvasId] = new Chart(ctx, {
-    type: "line",
-    data:  { labels, datasets },
-    options: {
-      responsive: true,
-      interaction: { mode: "index", intersect: false },
-      scales: {
-        y: { title: { display: true, text: yLabel }, beginAtZero: true },
-      },
-    },
-  });
-}
-
-function renderCharts() {
-  renderSimpleWeekly("deploy-freq-prs",     "chart-deploy-freq-prs", "deploys", "PRs merged");
-  renderSimpleWeekly("deploy-freq",         "chart-deploy-freq",      "deploys", "Deployments");
-  renderLeadTime();
-  renderSimpleWeekly("change-failure-rate", "chart-cfr",              "failure_pct", "CFR (%)");
-}
-
-function renderSimpleWeekly(metricName, canvasId, yField, yLabel) {
-  const metric = currentReport.metrics.find(m => m.metric === metricName);
-  if (!metric) return destroyChart(canvasId);
-  const rows = rowsForRepo(metric.data);
-  const labels = weekAxis(rows);
-  const datasets = [{
-    label: metricName,
-    data:  labels.map(w => {
-      const r = rows.find(x => x.week === w);
-      return r ? r[yField] : null;
-    }),
-    tension: 0.2,
-  }];
-  makeLineChart(canvasId, labels, datasets, yLabel);
-}
-
-function renderLeadTime() {
-  const metric = currentReport.metrics.find(m => m.metric === "lead-time");
-  if (!metric) return destroyChart("chart-lead-time");
-  const rows = rowsForRepo(metric.data);
-  const labels = weekAxis(rows);
-  const series = ["mean_h", "median_h", "p90_h"];
-  const datasets = series.map(field => ({
-    label: field.replace("_h", ""),
-    data:  labels.map(w => {
-      const r = rows.find(x => x.week === w);
-      return r ? r[field] : null;
-    }),
-    tension: 0.2,
-  }));
-  makeLineChart("chart-lead-time", labels, datasets, "Hours");
-}
-
-// --------- detail tables ---------
-
-function renderDetailTables() {
-  const host = document.getElementById("detail-tables");
-  host.innerHTML = "";
-  const weeklyMetrics = ["deploy-freq-prs", "deploy-freq", "lead-time", "change-failure-rate"];
-  for (const m of currentReport.metrics) {
-    if (!weeklyMetrics.includes(m.metric)) continue;
-    const rows = rowsForRepo(m.data);
-    host.append(makeTable(m.metric, rows));
-  }
-}
-
-function renderHotfixes() {
-  const host = document.getElementById("hotfixes-table");
-  host.innerHTML = "";
-  const metric = currentReport.metrics.find(m => m.metric === "hotfixes");
-  if (!metric) return;
-  host.append(makeTable("hotfixes", rowsForRepo(metric.data)));
-}
-
-function makeTable(caption, rows) {
-  const wrap = document.createElement("div");
-  if (rows.length === 0) {
-    wrap.innerHTML = `<p><em>${escapeHtml(caption)}: no data</em></p>`;
-    return wrap;
-  }
-  const headers = Object.keys(rows[0]);
-  const table = document.createElement("table");
-  const thead = document.createElement("thead");
-  const trh = document.createElement("tr");
-  for (const h of headers) {
-    const th = document.createElement("th");
-    th.textContent = h;
-    th.addEventListener("click", () => sortTable(table, headers.indexOf(h)));
-    trh.append(th);
-  }
-  thead.append(trh);
-  table.append(thead);
-  const tbody = document.createElement("tbody");
-  for (const r of rows) {
-    const tr = document.createElement("tr");
-    for (const h of headers) {
-      const td = document.createElement("td");
-      td.textContent = r[h] ?? "";
-      tr.append(td);
-    }
-    tbody.append(tr);
-  }
-  table.append(tbody);
-  const cap = document.createElement("caption");
-  cap.textContent = caption;
-  cap.style.cssText = "caption-side: top; text-align: left; padding: 0.5rem 0; font-weight: 600;";
-  table.prepend(cap);
-  wrap.append(table);
-  return wrap;
-}
-
-function sortTable(table, colIdx) {
-  const tbody = table.querySelector("tbody");
-  const rows = Array.from(tbody.querySelectorAll("tr"));
-  const dir = table.dataset.sortCol === String(colIdx) && table.dataset.sortDir === "asc"
-              ? "desc" : "asc";
-  rows.sort((a, b) => {
-    const av = a.children[colIdx].textContent;
-    const bv = b.children[colIdx].textContent;
-    const an = parseFloat(av);
-    const bn = parseFloat(bv);
-    if (!isNaN(an) && !isNaN(bn)) return dir === "asc" ? an - bn : bn - an;
-    return dir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
-  });
-  for (const r of rows) tbody.append(r);
-  table.dataset.sortCol = String(colIdx);
-  table.dataset.sortDir = dir;
-}
-
-// --------- utils ---------
 
 function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
-  }[c]));
+  return String(s ?? "").replace(/[&<>"']/g, c => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+  ));
+}
+
+function readVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+// --------- rendering ---------
+
+function resetCharts() {
+  for (const c of charts) c.destroy();
+  charts = [];
+}
+
+function render() {
+  showState({});
+  dash.hidden = false;
+
+  const metrics = byMetric(currentReport);
+  const repos = uniqueRepos(metrics);
+
+  document.getElementById("since").textContent = currentReport.since || "—";
+  document.getElementById("scope").textContent =
+    repos.length === 1 ? repos[0]
+    : repos.length > 1 ? `${repos.length} repositories`
+    : "No data yet";
+
+  if (repos.length > 1) {
+    repoPicker.hidden = false;
+    repoSel.innerHTML = "";
+    for (const r of repos) {
+      const opt = document.createElement("option");
+      opt.value = opt.textContent = r;
+      repoSel.append(opt);
+    }
+    repoSel.value = currentRepo && repos.includes(currentRepo) ? currentRepo : repos[0];
+    currentRepo = repoSel.value;
+    repoSel.onchange = () => {
+      currentRepo = repoSel.value;
+      renderForRepo(metrics, currentRepo);
+    };
+    renderForRepo(metrics, currentRepo);
+  } else {
+    repoPicker.hidden = true;
+    currentRepo = repos[0] || null;
+    renderForRepo(metrics, currentRepo);
+  }
+}
+
+function renderForRepo(metrics, repo) {
+  resetCharts();
+
+  const freqPrs     = filterByRepo(metrics["deploy-freq-prs"]     || [], repo);
+  const freqDeploys = filterByRepo(metrics["deploy-freq"]         || [], repo);
+  const leadTime    = filterByRepo(metrics["lead-time"]           || [], repo);
+  const cfr         = filterByRepo(metrics["change-failure-rate"] || [], repo);
+  const hotfixes    = filterByRepo(metrics["hotfixes"]            || [], repo);
+  const summary     = filterByRepo(metrics["summary"]             || [], repo);
+
+  renderKPIs(summary, freqPrs, freqDeploys, leadTime, cfr);
+  renderFreqChart(freqPrs, freqDeploys);
+  renderLeadChart(leadTime);
+  renderCFRChart(cfr);
+  renderHotfixes(hotfixes);
+}
+
+function renderKPIs(summary, freqPrs, freqDeploys, leadTime, cfr) {
+  const s = summary[0];
+
+  // Deploy frequency: last 4 weeks of actual deploys, else PRs, else summary.
+  const recentDeploys = recentN(freqDeploys, 4);
+  const recentPrs     = recentN(freqPrs, 4);
+  const deployPerWk =
+    recentDeploys.length
+      ? recentDeploys.reduce((a, r) => a + (r.deploys || 0), 0) / 4
+      : recentPrs.length
+      ? recentPrs.reduce((a, r) => a + (r.deploys || 0), 0) / 4
+      : s?.prs_per_week ?? null;
+  const deployUnit = recentDeploys.length ? " deploys/wk" : " merges/wk";
+
+  // Lead time: last 4 weeks median, averaged. Fall back to summary.
+  const recentLead = recentN(leadTime, 4);
+  const leadMedian =
+    recentLead.length
+      ? recentLead.reduce((a, r) => a + (r.median_h || 0), 0) / recentLead.length
+      : s?.median_lead_h ?? null;
+
+  // CFR: all rows in window, total failures / total merges.
+  const totals = cfr.reduce(
+    (acc, r) => ({ d: acc.d + (r.deploys || 0), f: acc.f + (r.failures || 0) }),
+    { d: 0, f: 0 }
+  );
+  const cfrPct =
+    totals.d > 0 ? (100 * totals.f) / totals.d
+    : s?.cfr != null ? parseFloat(String(s.cfr).replace("%", ""))
+    : null;
+
+  document.getElementById("kpis").innerHTML = [
+    kpiCard({
+      label: "Deploy frequency",
+      value: deployPerWk != null ? deployPerWk.toFixed(1) : "—",
+      unit: deployUnit,
+      subText: "last 4 weeks",
+      tier: deployFreqTier(deployPerWk),
+    }),
+    kpiCard({
+      label: "Lead time",
+      value: leadMedian != null ? Math.round(leadMedian).toString() : "—",
+      unit: " h",
+      subText: "median, last 4 wk",
+      tier: leadTimeTier(leadMedian),
+    }),
+    kpiCard({
+      label: "Change failure rate",
+      value: cfrPct != null ? cfrPct.toFixed(0) : "—",
+      unit: " %",
+      subText: "across window",
+      tier: cfrTier(cfrPct),
+    }),
+    kpiCard({
+      label: "Mean time to restore",
+      value: "—",
+      unit: "",
+      subText: "needs incident log",
+      tier: "na",
+    }),
+  ].join("");
+}
+
+// Align two series by week, producing one sorted label axis.
+function alignByWeek(seriesA, seriesB, valFn = r => r.deploys) {
+  const weeks = [...new Set([
+    ...seriesA.map(r => r.week),
+    ...(seriesB || []).map(r => r.week),
+  ])].sort();
+  const mapA = Object.fromEntries(seriesA.map(r => [r.week, valFn(r)]));
+  const mapB = Object.fromEntries((seriesB || []).map(r => [r.week, valFn(r)]));
+  return {
+    labels: weeks,
+    a: weeks.map(w => (mapA[w] == null ? null : mapA[w])),
+    b: weeks.map(w => (mapB[w] == null ? null : mapB[w])),
+  };
+}
+
+function baseOpts() {
+  const tick = readVar("--chart-tick");
+  const grid = readVar("--chart-grid");
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false }, tooltip: { enabled: true } },
+    scales: {
+      x: { grid: { color: grid }, ticks: { color: tick, font: { size: 11 } } },
+      y: { grid: { color: grid }, ticks: { color: tick, font: { size: 11 } }, beginAtZero: true },
+    },
+  };
+}
+
+function renderFreqChart(freqPrs, freqDeploys) {
+  const { labels, a, b } = alignByWeek(freqPrs, freqDeploys, r => r.deploys);
+  const primary = readVar("--chart-primary");
+  const secondary = readVar("--chart-secondary");
+  const ctx = document.getElementById("freqChart");
+  if (!labels.length) {
+    ctx.parentElement.innerHTML = '<div class="empty">No data yet</div>';
+    return;
+  }
+  charts.push(new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        { label: "Merged PRs", data: a, borderColor: primary, backgroundColor: primary,
+          borderWidth: 2, pointRadius: 2.5, tension: 0.25 },
+        { label: "Deploys", data: b, borderColor: secondary, backgroundColor: secondary,
+          borderWidth: 2, pointRadius: 2.5, tension: 0.25, borderDash: [4, 3] },
+      ],
+    },
+    options: baseOpts(),
+  }));
+}
+
+function renderLeadChart(leadTime) {
+  if (!leadTime.length) {
+    document.getElementById("leadChart").parentElement.innerHTML = '<div class="empty">No data yet</div>';
+    return;
+  }
+  const rows = [...leadTime].sort((a, b) => (a.week < b.week ? -1 : 1));
+  const labels = rows.map(r => r.week);
+  const primary = readVar("--chart-primary");
+  const secondary = readVar("--chart-secondary");
+  const accent = readVar("--chart-accent");
+  const opts = baseOpts();
+  opts.scales.y.title = { display: true, text: "hours", color: readVar("--chart-tick"), font: { size: 11 } };
+  charts.push(new Chart(document.getElementById("leadChart"), {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        { label: "Median", data: rows.map(r => r.median_h), borderColor: primary, backgroundColor: primary,
+          borderWidth: 2, pointRadius: 2.5, tension: 0.25 },
+        { label: "Mean",   data: rows.map(r => r.mean_h),   borderColor: secondary, backgroundColor: secondary,
+          borderWidth: 1.5, pointRadius: 2, tension: 0.25, borderDash: [4, 3] },
+        { label: "P90",    data: rows.map(r => r.p90_h),    borderColor: accent, backgroundColor: accent,
+          borderWidth: 1.5, pointRadius: 2, tension: 0.25, borderDash: [2, 2] },
+      ],
+    },
+    options: opts,
+  }));
+}
+
+function renderCFRChart(cfr) {
+  if (!cfr.length) {
+    document.getElementById("cfrChart").parentElement.innerHTML = '<div class="empty">No data yet</div>';
+    return;
+  }
+  const rows = [...cfr].sort((a, b) => (a.week < b.week ? -1 : 1));
+  const accent = readVar("--chart-accent");
+  const opts = baseOpts();
+  opts.scales.y.ticks.callback = v => v + "%";
+  charts.push(new Chart(document.getElementById("cfrChart"), {
+    type: "bar",
+    data: {
+      labels: rows.map(r => r.week),
+      datasets: [{ label: "CFR %", data: rows.map(r => r.failure_pct), backgroundColor: accent, borderRadius: 2 }],
+    },
+    options: opts,
+  }));
+}
+
+function renderHotfixes(rows) {
+  const el = document.getElementById("hotfixes");
+  if (!rows.length) {
+    el.innerHTML = '<div class="empty">No hotfixes in the current window</div>';
+    return;
+  }
+  let html = "";
+  let groupIdx = -1;
+  for (const r of rows) {
+    if (r.relation === "hotfix") {
+      groupIdx += 1;
+      html += `${groupIdx > 0 ? '<div class="hotfix-group"></div>' : ""}
+        <div class="hx-row">
+          <span class="hx-tag hx-hotfix">hotfix</span>
+          <span><span class="hx-pr">${escapeHtml(r.pr)}</span> ${escapeHtml(r.title)} <span class="hx-author">· ${escapeHtml(r.author || "")}</span></span>
+          <span class="hx-date">${escapeHtml(r.merged || "")}</span>
+        </div>`;
+    } else {
+      html += `<div class="hx-row prev">
+        <span class="hx-tag hx-prev">prev</span>
+        <span><span class="hx-pr">${escapeHtml(r.pr)}</span> ${escapeHtml(r.title)} <span class="hx-author">· ${escapeHtml(r.author || "")}</span></span>
+        <span class="hx-date">${escapeHtml(r.merged || "")}</span>
+      </div>`;
+    }
+  }
+  el.innerHTML = html;
 }
 
 // --------- wire up ---------
@@ -293,14 +407,6 @@ fileInput.addEventListener("change", (e) => {
   const f = e.target.files?.[0];
   if (f) loadFromFile(f);
 });
-repoSel.addEventListener("change", () => {
-  currentRepo = repoSel.value;
-  render();
-});
 
 const src = decideInitialSource();
-loadFromUrl(src.url, src.label).catch(err => {
-  console.error(err);
-  srcInfo.textContent = `Failed to load ${src.label}: ${err.message}`;
-  setEmpty(true);
-});
+loadFromUrl(src.url, src.label);

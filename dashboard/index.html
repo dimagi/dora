@@ -1,72 +1,125 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DORA metrics</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+    rel="stylesheet">
+
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <div class="page">
+    <h2 class="sr-only">DORA metrics dashboard</h2>
 
-<header>
-  <h1>DORA metrics</h1>
+    <div class="source-row">
+      <label for="url-input" class="sr-only">Report URL</label>
+      <input id="url-input" type="url" placeholder="https://…/report.json">
+      <button id="url-load" type="button">Load URL</button>
 
-  <div class="source-row">
-    <label for="url-input" class="sr-only">Report URL</label>
-    <input id="url-input" type="url" placeholder="https://…/report.json">
-    <button id="url-load" type="button">Load</button>
+      <label for="file-input" class="file-label">Upload file</label>
+      <input id="file-input" type="file" accept=".json,application/json">
 
-    <label for="file-input" class="file-label">or choose file…</label>
-    <input id="file-input" type="file" accept=".json,application/json">
-
-    <span id="source-info" class="source-info"></span>
-
-    <label for="repo-filter" class="repo-label" hidden>Repo:</label>
-    <select id="repo-filter" hidden></select>
-  </div>
-</header>
-
-<main>
-  <section id="summary" aria-label="Summary">
-    <!-- populated by app.js from `summary` metric -->
-  </section>
-
-  <section id="charts" aria-label="Weekly charts">
-    <div class="chart-grid">
-      <figure><canvas id="chart-deploy-freq-prs"></canvas><figcaption>Deploy frequency (merged PRs)</figcaption></figure>
-      <figure><canvas id="chart-deploy-freq"></canvas><figcaption>Deploy frequency (deployments)</figcaption></figure>
-      <figure><canvas id="chart-lead-time"></canvas><figcaption>Lead time (hours)</figcaption></figure>
-      <figure><canvas id="chart-cfr"></canvas><figcaption>Change failure rate (%)</figcaption></figure>
+      <span id="source-info" class="source-info"></span>
     </div>
-  </section>
 
-  <section id="detail">
-    <details>
-      <summary>Weekly metrics (raw tables)</summary>
-      <div id="detail-tables"></div>
-    </details>
-    <details>
-      <summary>Hotfix investigation</summary>
-      <div id="hotfixes-table"></div>
-    </details>
-  </section>
+    <div id="loading" class="state">
+      <p>Loading metrics…</p>
+    </div>
 
-  <p id="empty-state" class="empty-state" hidden>
-    No report loaded. Enter a URL, pick a file, or
-    <a href="?url=fixtures/sample.json">view the sample dataset</a>.
-  </p>
-</main>
+    <div id="error" class="state" hidden>
+      <h2>Couldn't load metrics</h2>
+      <p id="error-msg"></p>
+      <p>
+        Pass a report URL via <code>?url=&lt;url&gt;</code>, or use the controls above.
+      </p>
+    </div>
 
-<footer>
-  <p>Built with <a href="https://github.com/dimagi/dora">dora-metrics</a>.</p>
-</footer>
+    <div id="dashboard" hidden>
+      <header class="top">
+        <div class="brand">
+          <h1>DORA metrics</h1>
+          <p id="scope"></p>
+        </div>
+        <div class="meta">
+          <div>Data since <span id="since" class="num"></span></div>
+          <div id="repo-picker" hidden>
+            <label for="repo-select" style="font-size: 12px; margin-right: 6px;">Repo</label>
+            <select id="repo-select"></select>
+          </div>
+        </div>
+      </header>
 
-<script
-  src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"
-  integrity="sha384-vsrfeLOOY6KuIYKDlmVH5UiBmgIdB1oEf7p01YgWHuqmOHfZr374+odEv96n9tNC"
-  crossorigin="anonymous"
-  referrerpolicy="no-referrer"></script>
-<script src="app.js" defer></script>
+      <section class="kpis" id="kpis"></section>
 
+      <section class="panels">
+        <div class="panel">
+          <div class="panel-head">
+            <p class="panel-title">Deploy frequency</p>
+            <p class="panel-sub">Weekly merged PRs and successful deploys</p>
+          </div>
+          <div class="legend">
+            <span><i style="background: var(--chart-primary);"></i>Merged PRs</span>
+            <span><i style="background: var(--chart-secondary);"></i>Successful deploys</span>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="freqChart" role="img" aria-label="Weekly deploy frequency chart">
+              Deploy frequency timeseries
+            </canvas>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <p class="panel-title">Lead time</p>
+            <p class="panel-sub">Hours from first commit to merge, weekly</p>
+          </div>
+          <div class="legend">
+            <span><i style="background: var(--chart-primary);"></i>Median</span>
+            <span><i style="background: var(--chart-secondary);"></i>Mean</span>
+            <span><i style="background: var(--chart-accent);"></i>P90</span>
+          </div>
+          <div class="chart-wrap tall">
+            <canvas id="leadChart" role="img" aria-label="Weekly lead time chart">
+              Lead time timeseries
+            </canvas>
+          </div>
+        </div>
+
+        <div class="row-2">
+          <div class="panel">
+            <div class="panel-head">
+              <p class="panel-title">Change failure rate</p>
+              <p class="panel-sub">% of merged PRs tagged <span class="num">caused-incident</span></p>
+            </div>
+            <div class="chart-wrap">
+              <canvas id="cfrChart" role="img" aria-label="Weekly change failure rate chart">
+                Change failure rate timeseries
+              </canvas>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-head">
+              <p class="panel-title">Recent hotfixes</p>
+              <p class="panel-sub">Investigate which preceding PR caused each incident</p>
+            </div>
+            <div id="hotfixes"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script
+    src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"
+    integrity="sha384-vsrfeLOOY6KuIYKDlmVH5UiBmgIdB1oEf7p01YgWHuqmOHfZr374+odEv96n9tNC"
+    crossorigin="anonymous"
+    referrerpolicy="no-referrer"></script>
+  <script src="app.js" defer></script>
 </body>
 </html>
