@@ -69,7 +69,7 @@ https://dimagi.github.io/dora/?url=https://raw.githubusercontent.com/<your-repo>
 `dora.db` is the source of truth — `dora-report.json` is derived from it on every run. The DB is persisted between CI runs via [`actions/cache`](https://github.com/actions/cache):
 
 - **Hot cache (typical)**: `dora pull` only fetches PRs/deployments updated since the previous run, plus refreshes labels and transient deployment statuses. Fast.
-- **Cold cache (first run, or after 7+ days of inactivity)**: GitHub evicts the cache, the next run starts with an empty DB and re-pulls everything since `--since`. Slow but correct — typically a few minutes for a year of history.
+- **Cold cache (first run, or after 7+ days of inactivity)**: GitHub evicts the cache, the next run starts with an empty DB and re-pulls everything since `--since`. Slow but correct — typically a few minutes for a year of history. Each new PR costs 3 API calls (commits + pull detail + timeline) for the size + ready-for-review fields; subsequent pulls only re-fetch labels and transient deployment statuses.
 
 To bust the cache deliberately (e.g. if a future schema change requires it), bump the `v1` prefix in the workflow's cache `key`.
 
@@ -146,6 +146,8 @@ pull_requests (repo, number) PK
   title, author, base, labels (comma-joined)
   opened_at, merged_at, first_commit_at
   merge_sha
+  additions, deletions, changed_files       -- powers `review-latency`
+  ready_for_review_at                       -- NULL when never drafted
 
 deployments (repo, deployment_id) PK
   sha, environment, created_at, status

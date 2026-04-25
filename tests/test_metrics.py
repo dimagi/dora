@@ -9,6 +9,8 @@ to these week labels:
   2025-10-28              → 2025-W43  (1 PR acme/api)
 """
 
+import pytest
+
 from dora import metrics
 
 SINCE = "2025-10-01T00:00:00+00:00"
@@ -96,6 +98,23 @@ def test_hotfixes_lists_hotfix_with_preceding(fixture_conn):
     hotfix_rows = [r for r in rows if r[2] == "hotfix"]
     assert len(hotfix_rows) == 1
     assert hotfix_rows[0][1] == "#6"
+
+
+@pytest.mark.parametrize("n,expected", [
+    (None, None),
+    (-1,   None),
+    (0,    None),
+    (1,    "XS"),
+    (2,    "S"),
+    (3,    "S"),
+    (4,    "M"),
+    (9,    "M"),
+    (10,   "L+"),
+    (1000, "L+"),
+])
+def test_assign_bucket_boundaries(n, expected):
+    """Lock the bucket boundary table — protects against off-by-one regressions."""
+    assert metrics._assign_bucket(n) == expected
 
 
 def test_review_latency_buckets_and_window(fixture_conn):

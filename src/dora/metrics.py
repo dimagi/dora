@@ -14,6 +14,11 @@ import statistics
 # not counted) to avoid double-counting a single failure.
 FAILURE_LABELS = ("caused-incident",)
 
+# GitHub auto-marks old successful deployments as `inactive` when newer
+# deploys supersede them — so over any time window, most historically-
+# successful deploys show up as `inactive`, not `success`.
+SUCCESS_DEPLOY_STATUSES = ("success", "inactive")
+
 # Review-latency size buckets, by `changed_files`.
 # (label, lower_inclusive, upper_inclusive_or_None_for_open)
 BUCKETS: tuple[tuple[str, int, int | None], ...] = (
@@ -32,11 +37,6 @@ def _assign_bucket(changed_files: int | None) -> str | None:
         if changed_files >= lo and (hi is None or changed_files <= hi):
             return label
     return None
-
-# GitHub auto-marks old successful deployments as `inactive` when newer
-# deploys supersede them — so over any time window, most historically-
-# successful deploys show up as `inactive`, not `success`.
-SUCCESS_DEPLOY_STATUSES = ("success", "inactive")
 
 
 def m_deploy_freq_prs(conn: sqlite3.Connection, since: str):
@@ -231,7 +231,7 @@ def m_review_latency(conn: sqlite3.Connection, since: str):
     buckets: dict[tuple[str, str, str], list[float]] = {}
     for repo, week, files, hours in cur:
         bucket = _assign_bucket(files)
-        if bucket is None or hours is None or hours < 0:
+        if bucket is None or hours < 0:
             continue
         buckets.setdefault((repo, week, bucket), []).append(hours)
 
