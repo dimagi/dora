@@ -20,6 +20,10 @@ CREATE TABLE IF NOT EXISTS pull_requests (
     first_commit_at TEXT,
     merge_sha TEXT,
     labels TEXT,
+    additions INTEGER,
+    deletions INTEGER,
+    changed_files INTEGER,
+    ready_for_review_at TEXT,
     PRIMARY KEY (repo, number)
 );
 
@@ -37,11 +41,28 @@ CREATE INDEX IF NOT EXISTS idx_pr_merged   ON pull_requests(repo, merged_at);
 CREATE INDEX IF NOT EXISTS idx_dep_created ON deployments(repo, created_at);
 """
 
+# Columns added after the initial release. SQLite has no
+# ADD COLUMN IF NOT EXISTS, so we check PRAGMA table_info first.
+_PR_MIGRATIONS: tuple[tuple[str, str], ...] = (
+    ("additions",           "INTEGER"),
+    ("deletions",           "INTEGER"),
+    ("changed_files",       "INTEGER"),
+    ("ready_for_review_at", "TEXT"),
+)
+
+
+def _migrate_pr_table(conn: sqlite3.Connection) -> None:
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(pull_requests)")}
+    for name, type_ in _PR_MIGRATIONS:
+        if name not in existing:
+            conn.execute(f"ALTER TABLE pull_requests ADD COLUMN {name} {type_}")
+
 
 def init_db(path: str | Path) -> sqlite3.Connection:
     """Open (or create) the SQLite DB and ensure the schema is present."""
     conn = sqlite3.connect(path)
     conn.executescript(SCHEMA)
+    _migrate_pr_table(conn)
     return conn
 
 

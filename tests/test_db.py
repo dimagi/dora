@@ -88,3 +88,53 @@ def test_upsert_deployment_preserves_status_on_null_update(tmp_path):
     conn.commit()
     (status,) = conn.execute("SELECT status FROM deployments").fetchone()
     assert status == "success"
+
+
+def test_init_db_includes_review_latency_columns(tmp_path):
+    """Fresh DB has the four columns added for review-latency."""
+    conn = db.init_db(tmp_path / "fresh.db")
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(pull_requests)")}
+    assert "additions"           in cols
+    assert "deletions"           in cols
+    assert "changed_files"       in cols
+    assert "ready_for_review_at" in cols
+    conn.close()
+
+
+def test_init_db_migrates_legacy_db_in_place(tmp_path):
+    """A DB created with the pre-migration schema gets the new columns."""
+    path = tmp_path / "legacy.db"
+    legacy = sqlite3.connect(path)
+    legacy.executescript("""
+        CREATE TABLE pull_requests (
+            repo TEXT NOT NULL,
+            number INTEGER NOT NULL,
+            title TEXT,
+            author TEXT,
+            base TEXT,
+            opened_at TEXT NOT NULL,
+            merged_at TEXT,
+            first_commit_at TEXT,
+            merge_sha TEXT,
+            labels TEXT,
+            PRIMARY KEY (repo, number)
+        );
+    """)
+    legacy.commit()
+    legacy.close()
+
+    conn = db.init_db(path)
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(pull_requests)")}
+    assert {"additions", "deletions", "changed_files", "ready_for_review_at"} <= cols
+    conn.close()
+
+
+def test_init_db_migration_is_idempotent_on_already_migrated(tmp_path):
+    """Calling init_db twice on a migrated DB doesn't error or duplicate."""
+    path = tmp_path / "twice.db"
+    db.init_db(path).close()
+    db.init_db(path).close()  # must not raise
+    conn = sqlite3.connect(path)
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(pull_requests)")]
+    assert cols.count("changed_files") == 1
+    conn.close()
