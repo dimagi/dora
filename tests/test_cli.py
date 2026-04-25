@@ -69,11 +69,12 @@ def test_cli_report_review_latency_json(fixture_db):
          "--db", str(fixture_db),
          "--metric", "review-latency",
          "--format", "json",
-         "--weeks", "12"],
-        capture_output=True, text=True, check=True,
+         "--weeks", "500"],
+        capture_output=True, text=True, check=True, timeout=15,
     )
     payload = json.loads(result.stdout)
     metric_names = [m["metric"] for m in payload["metrics"]]
     assert "review-latency" in metric_names
     rl = next(m for m in payload["metrics"] if m["metric"] == "review-latency")
+    assert rl["data"], "review-latency returned no rows from the fixture DB"
     assert all(r["bucket"] in {"XS", "S", "M", "L+"} for r in rl["data"])
