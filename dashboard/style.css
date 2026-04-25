@@ -478,3 +478,114 @@ header.top {
   overflow: hidden; clip: rect(0,0,0,0);
   white-space: nowrap; border: 0;
 }
+
+/* Date-range filter */
+.range-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 24px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.range-label-text {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.presets {
+  display: flex;
+  gap: 4px;
+}
+.presets button {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s;
+}
+.presets button:hover { background: var(--accent-soft); }
+.presets button.active {
+  background: var(--accent);
+  color: #ffffff;
+  border-color: var(--accent);
+}
+.range-week {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  min-width: 5.5rem;
+}
+.range-week:last-child { text-align: right; }
+
+/* Two-handle range slider built from overlapping inputs.
+   Tracks have pointer-events:none so neither input swallows clicks
+   meant for the other handle; thumbs re-enable pointer-events. */
+.range-slider {
+  position: relative;
+  height: 28px;
+  flex: 1 1 14rem;
+  min-width: 12rem;
+}
+.rs-track {
+  position: absolute;
+  top: 50%;
+  left: 8px;
+  right: 8px;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  transform: translateY(-50%);
+}
+.rs-fill {
+  position: absolute;
+  top: 50%;
+  height: 4px;
+  background: var(--accent);
+  border-radius: 2px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.rs-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 28px;
+  margin: 0;
+  background: transparent;
+  pointer-events: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.rs-input::-webkit-slider-runnable-track { background: transparent; height: 28px; }
+.rs-input::-moz-range-track             { background: transparent; height: 28px; border: 0; }
+.rs-input::-webkit-slider-thumb {
+  pointer-events: auto;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+}
+.rs-input::-moz-range-thumb {
+  pointer-events: auto;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+}

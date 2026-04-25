@@ -28,6 +28,24 @@
       <span id="source-info" class="source-info"></span>
     </div>
 
+    <div class="range-row" id="range-row" hidden>
+      <span class="range-label-text">Range</span>
+      <div class="presets" id="presets">
+        <button type="button" data-preset="4">4w</button>
+        <button type="button" data-preset="12">12w</button>
+        <button type="button" data-preset="26">26w</button>
+        <button type="button" data-preset="all">All</button>
+      </div>
+      <span class="range-week" id="range-from-label">—</span>
+      <div class="range-slider" id="range-slider">
+        <div class="rs-track"></div>
+        <div class="rs-fill" id="rs-fill"></div>
+        <input type="range" class="rs-input rs-from" id="range-from" min="0" max="0" value="0" aria-label="Range start">
+        <input type="range" class="rs-input rs-to"   id="range-to"   min="0" max="0" value="0" aria-label="Range end">
+      </div>
+      <span class="range-week" id="range-to-label">—</span>
+    </div>
+
     <div id="loading" class="state">
       <p>Loading metrics…</p>
     </div>
