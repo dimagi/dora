@@ -79,9 +79,19 @@ The default `GITHUB_TOKEN` in Actions is scoped to the workflow's own repo. To a
 
 ### S3 variant
 
-A commented S3 variant in the example workflow stores both `dora.db` and `dora-report.json` in S3 instead of using the cache + git-commit pattern. Useful if you'd rather not have JSON history in your git log, or if you want guaranteed persistence beyond the 7-day cache eviction window. You'll need:
+A commented S3 variant in the example workflow stores both `dora.db` and `dora-report.json` in S3 instead of using the cache + git-commit pattern. Useful if you'd rather not have JSON history in your git log, or if you want guaranteed persistence beyond the 7-day cache eviction window.
 
-- `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` as repo secrets
+**Recommended auth: GitHub OIDC.** Short-lived credentials assumed at workflow runtime; no long-lived AWS keys to rotate, no secrets stored in the repo. Setup is two AWS resources:
+
+1. An IAM OIDC identity provider for `token.actions.githubusercontent.com`.
+2. An IAM role with a trust policy restricted to your repo (and optionally branch), and a policy granting `s3:GetObject` + `s3:PutObject` on the bucket prefix.
+
+The workflow then uses [`aws-actions/configure-aws-credentials@v4`](https://github.com/aws-actions/configure-aws-credentials) with `role-to-assume: …`. See the example workflow comments for the exact policy/role shape.
+
+**Fallback: long-lived access keys.** If you don't have AWS-side access to set up OIDC, store `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` as repo secrets and pass them via env vars on the relevant steps.
+
+Either way, you'll also need:
+
 - Bucket CORS config allowing `GET` from `*` (so the dashboard can fetch the JSON)
 - The DB is stored privately; only the JSON is `--public-read`
 

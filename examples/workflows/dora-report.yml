@@ -58,25 +58,56 @@ jobs:
             git push
           fi
 
-# --- S3 variant -------------------------------------------------------------
+# --- S3 variant (OIDC, recommended) -----------------------------------------
 # If you'd rather host both the DB and the report in S3 (no DB in CI cache,
-# no JSON in git history), replace the "Cache dora.db" and "Commit report"
-# steps with:
+# no JSON in git history), use GitHub OIDC to get short-lived AWS credentials
+# — no long-lived secrets to rotate.
+#
+# AWS one-time setup:
+#   1. IAM → Identity providers → Add provider:
+#        Type: OpenID Connect
+#        URL:  https://token.actions.githubusercontent.com
+#        Audience: sts.amazonaws.com
+#   2. Create an IAM role (e.g. `dora-report-uploader`) with a trust policy
+#      restricting it to your repo (and optionally branch):
+#        {
+#          "Version": "2012-10-17",
+#          "Statement": [{
+#            "Effect": "Allow",
+#            "Principal": { "Federated": "arn:aws:iam::<ACCT>:oidc-provider/token.actions.githubusercontent.com" },
+#            "Action":   "sts:AssumeRoleWithWebIdentity",
+#            "Condition": {
+#              "StringEquals": {
+#                "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+#              },
+#              "StringLike": {
+#                "token.actions.githubusercontent.com:sub": "repo:<OWNER>/<REPO>:ref:refs/heads/main"
+#              }
+#            }
+#          }]
+#        }
+#   3. Attach a policy granting GetObject + PutObject on your bucket prefix.
+#
+# Workflow changes — replace "Cache dora.db" and "Commit report" with:
+#
+#     permissions:
+#       id-token: write     # required for OIDC
+#       contents: read
+#
+#       - name: Configure AWS via OIDC
+#         uses: aws-actions/configure-aws-credentials@v4
+#         with:
+#           role-to-assume: arn:aws:iam::<ACCT>:role/dora-report-uploader
+#           aws-region: us-east-1
 #
 #       - name: Download dora.db from S3
-#         env:
-#           AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-#           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-#           AWS_DEFAULT_REGION:    us-east-1
 #         run: |
-#           # First run: this 404s and we start with an empty DB. That's fine.
-#           aws s3 cp s3://my-bucket/dora.db ./dora.db || echo "no existing DB, starting fresh"
+#           # First run: 404s and we start with an empty DB. That's fine.
+#           aws s3 cp s3://my-bucket/dora.db ./dora.db || echo "no existing DB"
+#
+#       # ... pull & report steps run as before ...
 #
 #       - name: Upload to S3
-#         env:
-#           AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-#           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-#           AWS_DEFAULT_REGION:    us-east-1
 #         run: |
 #           uv tool install "git+https://github.com/dimagi/dora[s3]"
 #           dora upload dora-report.json \
@@ -87,3 +118,17 @@ jobs:
 #   [ { "AllowedOrigins": ["*"],
 #       "AllowedMethods": ["GET"],
 #       "AllowedHeaders": ["*"] } ]
+#
+# --- S3 variant (long-lived access keys, fallback) --------------------------
+# If you can't add an OIDC provider on the AWS side, fall back to access keys
+# stored as repo secrets. Same workflow shape, but replace the OIDC configure
+# step with env vars on the AWS-using steps:
+#
+#       - name: Download dora.db from S3
+#         env:
+#           AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+#           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#           AWS_DEFAULT_REGION:    us-east-1
+#         run: aws s3 cp s3://my-bucket/dora.db ./dora.db || echo "no existing DB"
+#
+# (The `permissions: id-token: write` line isn't needed in this variant.)
