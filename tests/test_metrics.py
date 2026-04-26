@@ -9,6 +9,8 @@ to these week labels:
   2025-10-28              → 2025-W43  (1 PR acme/api)
 """
 
+import pytest
+
 from dora import metrics
 
 SINCE = "2025-10-01T00:00:00+00:00"
@@ -98,6 +100,66 @@ def test_hotfixes_lists_hotfix_with_preceding(fixture_conn):
     assert hotfix_rows[0][1] == "#6"
 
 
+@pytest.mark.parametrize("n,expected", [
+    (None, None),
+    (-1,   None),
+    (0,    None),
+    (1,    "XS"),
+    (2,    "S"),
+    (3,    "S"),
+    (4,    "M"),
+    (9,    "M"),
+    (10,   "L+"),
+    (1000, "L+"),
+])
+def test_assign_bucket_boundaries(n, expected):
+    """Lock the bucket boundary table — protects against off-by-one regressions."""
+    assert metrics._assign_bucket(n) == expected
+
+
+def test_review_latency_buckets_and_window(fixture_conn):
+    headers, rows = metrics.m_review_latency(fixture_conn, SINCE)
+    out = [_row_dict(headers, r) for r in rows]
+
+    # PR 1: opened 2025-10-13T00, merged 2025-10-14T10 → 34h, changed_files=1 (XS)
+    xs_w41 = next(r for r in out
+                  if r["repo"] == "acme/api" and r["week"] == "2025-W41"
+                  and r["bucket"] == "XS")
+    assert xs_w41["n_prs"]    == 1
+    assert xs_w41["median_h"] == 34.0
+
+    # PR 2: ready_for_review_at 2025-10-14T10, merged 2025-10-15T20 → 34h
+    # NOT opened→merged (44h). Confirms COALESCE picks ready_for_review_at.
+    s_w41 = next(r for r in out
+                 if r["repo"] == "acme/api" and r["week"] == "2025-W41"
+                 and r["bucket"] == "S")
+    assert s_w41["median_h"] == 34.0
+
+    # PR 5: changed_files=25 → L+
+    lplus_w42 = next(r for r in out
+                     if r["repo"] == "acme/api" and r["week"] == "2025-W42"
+                     and r["bucket"] == "L+")
+    assert lplus_w42["n_prs"]    == 1
+    assert lplus_w42["median_h"] == 15.0
+
+
+def test_review_latency_excludes_null_changed_files(fixture_conn):
+    """PR 7 has changed_files=NULL — must not appear in any bucket."""
+    headers, rows = metrics.m_review_latency(fixture_conn, SINCE)
+    out = [_row_dict(headers, r) for r in rows]
+    assert not any(r["repo"] == "acme/api" and r["week"] == "2025-W43" for r in out)
+
+
+def test_review_latency_headers(fixture_conn):
+    """Lock the output schema so the dashboard renderer is stable."""
+    headers, _ = metrics.m_review_latency(fixture_conn, SINCE)
+    assert headers == ["repo", "week", "bucket", "n_prs", "median_h", "p90_h"]
+
+
+def test_metrics_registry_has_review_latency():
+    assert "review-latency" in metrics.METRICS
+
+
 def test_metrics_registry_has_all():
     assert set(metrics.METRICS) == {
         "deploy-freq-prs",
@@ -107,4 +169,5 @@ def test_metrics_registry_has_all():
         "change-failure-prs",
         "hotfixes",
         "summary",
+        "review-latency",
     }

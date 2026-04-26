@@ -131,6 +131,24 @@
             <div id="hotfixes"></div>
           </div>
         </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <p class="panel-title">Review latency</p>
+            <p class="panel-sub" title="merged − ready_for_review_at (or opened_at, if never drafted). Buckets: XS=1, S=2-3, M=4-9, L+=10+ files.">Median hours waiting for review, by PR size</p>
+          </div>
+          <div class="legend">
+            <span><i style="background: #2d5a8e;"></i>XS (1 file)</span>
+            <span><i style="background: #4a86c7;"></i>S (2–3)</span>
+            <span><i style="background: #b4450a;"></i>M (4–9)</span>
+            <span><i style="background: #6a3d9a;"></i>L+ (10+)</span>
+          </div>
+          <div class="chart-wrap tall">
+            <canvas id="reviewLatencyChart" role="img" aria-label="Weekly review latency by PR size">
+              Review latency by PR size
+            </canvas>
+          </div>
+        </div>
       </section>
     </div>
   </div>

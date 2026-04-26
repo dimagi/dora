@@ -76,6 +76,52 @@ def test_gh_sleeps_and_retries_on_rate_limit(requests_mock, monkeypatch):
     assert slept and slept[0] >= 5
 
 
+def test_fetch_ready_for_review_at_first_page(requests_mock):
+    base = "https://api.github.com"
+    requests_mock.get(
+        f"{base}/repos/x/y/issues/1/timeline",
+        json=[
+            {"event": "labeled",            "created_at": "2025-10-10T00:00:00Z"},
+            {"event": "ready_for_review",   "created_at": "2025-10-10T05:00:00Z"},
+            {"event": "reviewed",           "created_at": "2025-10-10T08:00:00Z"},
+        ],
+    )
+    session = requests.Session()
+    out = github._fetch_ready_for_review_at(session, "x/y", 1)
+    assert out == "2025-10-10T05:00:00Z"
+
+
+def test_fetch_ready_for_review_at_no_event(requests_mock):
+    base = "https://api.github.com"
+    requests_mock.get(
+        f"{base}/repos/x/y/issues/2/timeline",
+        json=[
+            {"event": "labeled",  "created_at": "2025-10-10T00:00:00Z"},
+            {"event": "reviewed", "created_at": "2025-10-10T08:00:00Z"},
+        ],
+    )
+    session = requests.Session()
+    out = github._fetch_ready_for_review_at(session, "x/y", 2)
+    assert out is None
+
+
+def test_fetch_ready_for_review_at_paginates(requests_mock):
+    """Event lives on page 2 — the paginator must follow Link rel=next."""
+    base = "https://api.github.com"
+    requests_mock.get(
+        f"{base}/repos/x/y/issues/3/timeline",
+        json=[{"event": "labeled", "created_at": "2025-10-10T00:00:00Z"}],
+        headers={"Link": f'<{base}/repos/x/y/issues/3/timeline?page=2>; rel="next"'},
+    )
+    requests_mock.get(
+        f"{base}/repos/x/y/issues/3/timeline?page=2",
+        json=[{"event": "ready_for_review", "created_at": "2025-10-11T03:00:00Z"}],
+    )
+    session = requests.Session()
+    out = github._fetch_ready_for_review_at(session, "x/y", 3)
+    assert out == "2025-10-11T03:00:00Z"
+
+
 # --- fetch_prs ------------------------------------------------------------
 
 def test_fetch_prs_filters_to_merged_within_window(requests_mock):
@@ -113,12 +159,22 @@ def test_fetch_prs_filters_to_merged_within_window(requests_mock):
         f"{base}/repos/x/y/pulls/1/commits",
         json=[{"commit": {"author": {"date": "2025-10-09T00:00:00Z"}}}],
     )
+    requests_mock.get(
+        f"{base}/repos/x/y/pulls/1",
+        json={"additions": 5, "deletions": 0, "changed_files": 1},
+    )
+    requests_mock.get(
+        f"{base}/repos/x/y/issues/1/timeline",
+        json=[],  # never a draft
+    )
 
     session = requests.Session()
     since = github.iso_to_dt("2025-10-01T00:00:00+00:00")
     out = list(github.fetch_prs(session, "x/y", since, "main", known_prs=set()))
     assert [p["number"] for p in out] == [1]
-    assert out[0]["first_commit_at"] == "2025-10-09T00:00:00Z"
+    assert out[0]["first_commit_at"]     == "2025-10-09T00:00:00Z"
+    assert out[0]["changed_files"]       == 1
+    assert out[0]["ready_for_review_at"] is None
 
 
 def test_fetch_prs_skips_commits_for_known(requests_mock):
@@ -134,12 +190,54 @@ def test_fetch_prs_skips_commits_for_known(requests_mock):
             "merge_commit_sha": "s1",
         }],
     )
-    # If the implementation tried /commits, requests-mock would 404.
+    # If the implementation tried /commits, /pulls/1, or /issues/1/timeline,
+    # requests-mock would 404.
     session = requests.Session()
     since = github.iso_to_dt("2025-10-01T00:00:00+00:00")
     out = list(github.fetch_prs(session, "x/y", since, "main", known_prs={1}))
-    assert out[0]["first_commit_at"] is None
+    assert out[0]["first_commit_at"]     is None
+    assert out[0]["additions"]           is None
+    assert out[0]["deletions"]           is None
+    assert out[0]["changed_files"]       is None
+    assert out[0]["ready_for_review_at"] is None
     assert out[0]["labels"] == "L1"
+
+
+def test_fetch_prs_unknown_pr_includes_size_and_draft(requests_mock):
+    base = "https://api.github.com"
+    requests_mock.get(
+        f"{base}/repos/x/y/pulls",
+        json=[{
+            "number": 1, "title": "t", "user": {"login": "a"},
+            "base": {"ref": "main"}, "labels": [],
+            "created_at": "2025-10-10T00:00:00Z",
+            "updated_at": "2025-10-10T00:00:00Z",
+            "merged_at":  "2025-10-10T00:00:00Z",
+            "merge_commit_sha": "s1",
+        }],
+    )
+    requests_mock.get(
+        f"{base}/repos/x/y/pulls/1/commits",
+        json=[{"commit": {"author": {"date": "2025-10-09T00:00:00Z"}}}],
+    )
+    requests_mock.get(
+        f"{base}/repos/x/y/pulls/1",
+        json={"additions": 100, "deletions": 30, "changed_files": 7},
+    )
+    requests_mock.get(
+        f"{base}/repos/x/y/issues/1/timeline",
+        json=[{"event": "ready_for_review", "created_at": "2025-10-09T12:00:00Z"}],
+    )
+
+    session = requests.Session()
+    since = github.iso_to_dt("2025-10-01T00:00:00+00:00")
+    out = list(github.fetch_prs(session, "x/y", since, "main", known_prs=set()))
+    assert len(out) == 1
+    pr = out[0]
+    assert pr["additions"]           == 100
+    assert pr["deletions"]           == 30
+    assert pr["changed_files"]       == 7
+    assert pr["ready_for_review_at"] == "2025-10-09T12:00:00Z"
 
 
 # --- fetch_deployments ----------------------------------------------------

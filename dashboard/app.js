@@ -212,15 +212,16 @@ function render() {
 function renderForRepo(metrics, repo) {
   resetCharts();
 
-  const freqPrs     = inRange(filterByRepo(metrics["deploy-freq-prs"]     || [], repo));
-  const freqDeploys = inRange(filterByRepo(metrics["deploy-freq"]         || [], repo));
-  const leadTime    = inRange(filterByRepo(metrics["lead-time"]           || [], repo));
-  const cfr         = inRange(filterByRepo(metrics["change-failure-rate"] || [], repo));
-  const cfrPrs      = inRange(filterByRepo(metrics["change-failure-prs"]  || [], repo));
-  const hotfixes    = inRangeHotfixes(filterByRepo(metrics["hotfixes"]    || [], repo));
+  const freqPrs       = inRange(filterByRepo(metrics["deploy-freq-prs"]     || [], repo));
+  const freqDeploys   = inRange(filterByRepo(metrics["deploy-freq"]         || [], repo));
+  const leadTime      = inRange(filterByRepo(metrics["lead-time"]           || [], repo));
+  const cfr           = inRange(filterByRepo(metrics["change-failure-rate"] || [], repo));
+  const cfrPrs        = inRange(filterByRepo(metrics["change-failure-prs"]  || [], repo));
+  const hotfixes      = inRangeHotfixes(filterByRepo(metrics["hotfixes"]    || [], repo));
+  const reviewLatency = inRange(filterByRepo(metrics["review-latency"]      || [], repo));
   // summary is not date-filterable; renderKPIs uses it only as a fallback,
   // and that fallback is dropped when filtering is active (see renderKPIs).
-  const summary     = filterByRepo(metrics["summary"] || [], repo);
+  const summary       = filterByRepo(metrics["summary"] || [], repo);
 
   renderKPIs(summary, freqPrs, freqDeploys, leadTime, cfr);
   renderFreqChart(freqPrs, freqDeploys);
@@ -228,6 +229,7 @@ function renderForRepo(metrics, repo) {
   renderCFRChart(cfr);
   renderCfrPrs(cfrPrs);
   renderHotfixes(hotfixes);
+  renderReviewLatencyChart(reviewLatency);
 }
 
 function renderKPIs(summary, freqPrs, freqDeploys, leadTime, cfr) {
@@ -404,6 +406,58 @@ function renderCFRChart(cfr) {
       labels: rows.map(r => r.week),
       datasets: [{ label: "CFR %", data: rows.map(r => r.failure_pct), backgroundColor: accent, borderRadius: 2 }],
     },
+    options: opts,
+  }));
+}
+
+const REVIEW_LATENCY_BUCKETS = [
+  { label: "XS", color: "#2d5a8e" },
+  { label: "S",  color: "#4a86c7" },
+  { label: "M",  color: "#b4450a" },
+  { label: "L+", color: "#6a3d9a" },
+];
+
+function renderReviewLatencyChart(rows) {
+  const ctx = document.getElementById("reviewLatencyChart");
+  if (!rows.length) {
+    ctx.parentElement.innerHTML = '<div class="empty">No data yet</div>';
+    return;
+  }
+
+  // One sorted week axis spanning all buckets.
+  const weeks = [...new Set(rows.map(r => r.week))].sort();
+
+  // Per-bucket map: week → median_h.
+  const byBucket = {};
+  for (const r of rows) {
+    (byBucket[r.bucket] = byBucket[r.bucket] || {})[r.week] = r.median_h;
+  }
+
+  const datasets = REVIEW_LATENCY_BUCKETS.map(({ label, color }) => ({
+    label,
+    data: weeks.map(w => {
+      const v = byBucket[label]?.[w];
+      return v == null ? null : v;
+    }),
+    borderColor: color,
+    backgroundColor: color,
+    borderWidth: 2,
+    pointRadius: 2.5,
+    tension: 0.25,
+    spanGaps: false,
+  }));
+
+  const opts = baseOpts();
+  opts.scales.y.title = {
+    display: true,
+    text: "hours",
+    color: readVar("--chart-tick"),
+    font: { size: 11 },
+  };
+
+  charts.push(new Chart(ctx, {
+    type: "line",
+    data: { labels: weeks, datasets },
     options: opts,
   }));
 }

@@ -78,6 +78,24 @@ def iso_to_dt(s: str) -> datetime:
     return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
 
+def _fetch_ready_for_review_at(
+    session: requests.Session,
+    repo: str,
+    number: int,
+) -> str | None:
+    """Return the timestamp of the first `ready_for_review` event, or None.
+
+    A PR that was never a draft has no `ready_for_review` event in its
+    timeline; we return None and let the metric COALESCE down to opened_at.
+    A PR toggled draft → ready → draft → ready returns the FIRST ready
+    event (most conservative — longest review window).
+    """
+    for ev in gh(session, f"/repos/{repo}/issues/{number}/timeline"):
+        if ev.get("event") == "ready_for_review":
+            return ev.get("created_at")
+    return None
+
+
 def fetch_prs(
     session: requests.Session,
     repo: str,
@@ -90,9 +108,9 @@ def fetch_prs(
     The /pulls API doesn't filter by merged_at, so we page in updated-desc
     order, stop when we page past `since`, and filter merged_at within.
 
-    PRs whose number is in `known_prs` skip the /commits call (the
-    expensive part) — first_commit_at stays None so the upsert COALESCE
-    preserves the existing DB value.
+    PRs whose number is in `known_prs` skip the per-PR API calls
+    (commits + pull detail + timeline) — the four corresponding fields
+    stay None so the upsert COALESCE preserves the stored values.
     """
     params = {
         "state":     "closed",
@@ -108,7 +126,11 @@ def fetch_prs(
             continue
 
         if pr["number"] in known_prs:
-            first_commit_at = None  # cached
+            first_commit_at     = None  # cached
+            additions           = None
+            deletions           = None
+            changed_files       = None
+            ready_for_review_at = None
         else:
             commits = list(
                 gh(session, f"/repos/{repo}/pulls/{pr['number']}/commits", {"per_page": 100})
@@ -117,16 +139,33 @@ def fetch_prs(
                 commits[0]["commit"]["author"]["date"] if commits else pr["created_at"]
             )
 
+            detail = session.get(
+                f"{API}/repos/{repo}/pulls/{pr['number']}", timeout=30
+            )
+            detail.raise_for_status()
+            d = detail.json()
+            additions     = d.get("additions")
+            deletions     = d.get("deletions")
+            changed_files = d.get("changed_files")
+
+            ready_for_review_at = _fetch_ready_for_review_at(
+                session, repo, pr["number"]
+            )
+
         yield {
-            "number":          pr["number"],
-            "title":           pr["title"],
-            "author":          (pr.get("user") or {}).get("login"),
-            "base":            pr["base"]["ref"],
-            "opened_at":       pr["created_at"],
-            "merged_at":       pr["merged_at"],
-            "first_commit_at": first_commit_at,
-            "merge_sha":       pr["merge_commit_sha"],
-            "labels":          ",".join(l["name"] for l in pr.get("labels") or []),
+            "number":              pr["number"],
+            "title":               pr["title"],
+            "author":              (pr.get("user") or {}).get("login"),
+            "base":                pr["base"]["ref"],
+            "opened_at":           pr["created_at"],
+            "merged_at":           pr["merged_at"],
+            "first_commit_at":     first_commit_at,
+            "merge_sha":           pr["merge_commit_sha"],
+            "labels":              ",".join(l["name"] for l in pr.get("labels") or []),
+            "additions":           additions,
+            "deletions":           deletions,
+            "changed_files":       changed_files,
+            "ready_for_review_at": ready_for_review_at,
         }
 
 
