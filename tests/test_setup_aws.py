@@ -112,3 +112,55 @@ def test_preflight_succeeds_records_account_id(fake_aws):
     assert result.returncode == 0, f"stderr={result.stderr}"
     sts_calls = [c for c in fake_aws.calls if c[:2] == ["sts", "get-caller-identity"]]
     assert len(sts_calls) == 1
+
+
+def _stub_happy_path(fake_aws, *, oidc_present=False, role_present=False, bucket_status=404):
+    """Set up canned responses for everything except the resource-under-test."""
+    fake_aws.respond("sts get-caller-identity", '{"Account": "123456789012"}')
+    if oidc_present:
+        fake_aws.respond(
+            "iam list-open-id-connect-providers",
+            '{"OpenIDConnectProviderList": [{"Arn": "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"}]}',
+        )
+    else:
+        fake_aws.respond("iam list-open-id-connect-providers", '{"OpenIDConnectProviderList": []}')
+    fake_aws.respond("iam create-open-id-connect-provider", "")
+    fake_aws.respond("s3api head-bucket", "", exit_code=(0 if bucket_status == 200 else 255))
+    fake_aws.respond("s3api create-bucket", "")
+    fake_aws.respond("s3api put-public-access-block", "")
+    fake_aws.respond("s3api put-bucket-cors", "")
+    fake_aws.respond("s3api put-bucket-policy", "")
+    if role_present:
+        fake_aws.respond("iam get-role", '{"Role": {"Arn": "arn:aws:iam::123456789012:role/dora-report-uploader"}}')
+    else:
+        fake_aws.respond("iam get-role", "", exit_code=255)
+    fake_aws.respond("iam create-role", "")
+    fake_aws.respond("iam update-assume-role-policy", "")
+    fake_aws.respond("iam put-role-policy", "")
+
+
+def test_oidc_provider_created_when_absent(fake_aws):
+    _stub_happy_path(fake_aws, oidc_present=False)
+    result = subprocess.run(
+        ["bash", str(SCRIPT), *VALID_ARGS],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    creates = [c for c in fake_aws.calls if c[:2] == ["iam", "create-open-id-connect-provider"]]
+    assert len(creates) == 1
+    # URL and audience are correct
+    create_argv = creates[0]
+    assert "https://token.actions.githubusercontent.com" in create_argv
+    assert "sts.amazonaws.com" in create_argv
+
+
+def test_oidc_provider_skipped_when_present(fake_aws):
+    _stub_happy_path(fake_aws, oidc_present=True)
+    result = subprocess.run(
+        ["bash", str(SCRIPT), *VALID_ARGS],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    creates = [c for c in fake_aws.calls if c[:2] == ["iam", "create-open-id-connect-provider"]]
+    assert len(creates) == 0
+    assert "OIDC provider already exists" in result.stderr or "reusing" in result.stderr

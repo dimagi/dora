@@ -70,3 +70,28 @@ if ! sts_json="$(aws sts get-caller-identity 2>/dev/null)"; then
 fi
 account_id="$(echo "$sts_json" | jq -r '.Account')"
 [[ -n "$account_id" && "$account_id" != "null" ]] || die "aws sts get-caller-identity returned no account id"
+
+# --- 1. OIDC provider ------------------------------------------------------
+
+oidc_url="https://token.actions.githubusercontent.com"
+oidc_arn_suffix="oidc-provider/token.actions.githubusercontent.com"
+
+echo "→ checking IAM OIDC provider for $oidc_url" >&2
+existing_oidc="$(
+  aws iam list-open-id-connect-providers \
+    | jq -r ".OpenIDConnectProviderList[].Arn | select(endswith(\"$oidc_arn_suffix\"))"
+)"
+
+if [[ -n "$existing_oidc" ]]; then
+  echo "✓ OIDC provider already exists, reusing: $existing_oidc" >&2
+  oidc_provider_arn="$existing_oidc"
+else
+  echo "→ creating OIDC provider" >&2
+  oidc_provider_arn="$(
+    aws iam create-open-id-connect-provider \
+      --url "$oidc_url" \
+      --client-id-list "sts.amazonaws.com" \
+      | jq -r '.OpenIDConnectProviderArn'
+  )"
+  echo "✓ OIDC provider created: $oidc_provider_arn" >&2
+fi
