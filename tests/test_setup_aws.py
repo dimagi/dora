@@ -55,3 +55,60 @@ def test_argument_validation(argv, expected_substr):
     )
     assert result.returncode == 2, f"stdout={result.stdout!r} stderr={result.stderr!r}"
     assert expected_substr in result.stderr
+
+
+VALID_ARGS = [
+    "--repo", "owner/name",
+    "--region", "us-east-1",
+    "--bucket", "my-dora-bucket",
+]
+
+
+def test_preflight_aws_cli_missing(tmp_path, monkeypatch):
+    """If `aws` is not on PATH, the script aborts with a clear message."""
+    # Point PATH at a known-empty dir (but keep /bin for bash).
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", f"{empty}:/usr/bin:/bin")
+    result = subprocess.run(
+        ["bash", str(SCRIPT), *VALID_ARGS],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 2
+    assert "aws" in result.stderr.lower()
+
+
+def test_preflight_caller_identity_failure(fake_aws):
+    """If `aws sts get-caller-identity` exits non-zero, the script aborts."""
+    fake_aws.respond("sts get-caller-identity", "", exit_code=255)
+    result = subprocess.run(
+        ["bash", str(SCRIPT), *VALID_ARGS],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 2
+    assert "credentials" in result.stderr.lower()
+
+
+def test_preflight_succeeds_records_account_id(fake_aws):
+    """Successful preflight calls sts get-caller-identity exactly once."""
+    fake_aws.respond("sts get-caller-identity", '{"Account": "123456789012"}')
+    # Stub everything else as no-op so the script can progress past preflight.
+    fake_aws.respond("iam list-open-id-connect-providers", '{"OpenIDConnectProviderList": []}')
+    fake_aws.respond("iam create-open-id-connect-provider", '{}')
+    fake_aws.respond("s3api head-bucket", "", exit_code=0)
+    fake_aws.respond("s3api put-public-access-block", "")
+    fake_aws.respond("s3api put-bucket-cors", "")
+    fake_aws.respond("s3api put-bucket-policy", "")
+    fake_aws.respond("iam get-role", "", exit_code=255)  # role absent path
+    fake_aws.respond("iam create-role", "")
+    fake_aws.respond("iam put-role-policy", "")
+    result = subprocess.run(
+        ["bash", str(SCRIPT), *VALID_ARGS],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, f"stderr={result.stderr}"
+    sts_calls = [c for c in fake_aws.calls if c[:2] == ["sts", "get-caller-identity"]]
+    assert len(sts_calls) == 1

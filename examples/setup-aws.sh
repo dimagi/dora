@@ -59,3 +59,14 @@ if [[ -n "$bucket" && -n "$existing_bucket" ]] || [[ -z "$bucket" && -z "$existi
 fi
 
 [[ "$repo" =~ ^[^/]+/[^/]+$ ]] || die "--repo must be OWNER/NAME (got: $repo)"
+
+# --- Preflight -------------------------------------------------------------
+
+command -v aws >/dev/null 2>&1 || die "aws CLI not on PATH (install AWS CLI v2)"
+command -v jq  >/dev/null 2>&1 || die "jq not on PATH (apt install jq / brew install jq)"
+
+if ! sts_json="$(aws sts get-caller-identity 2>/dev/null)"; then
+  die "aws credentials not configured (run 'aws configure' or set AWS_PROFILE)"
+fi
+account_id="$(echo "$sts_json" | jq -r '.Account')"
+[[ -n "$account_id" && "$account_id" != "null" ]] || die "aws sts get-caller-identity returned no account id"
