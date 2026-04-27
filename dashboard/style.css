@@ -589,3 +589,66 @@ header.top {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
   cursor: pointer;
 }
+
+/* Weekend merges panel */
+.wk-summary {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.wk-author {
+  border-top: 1px solid var(--border);
+  padding: 6px 0;
+}
+.wk-author:first-of-type { border-top: 0; }
+.wk-author > summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  cursor: pointer;
+  font-size: 14px;
+  list-style: none;
+}
+.wk-author > summary::-webkit-details-marker { display: none; }
+.wk-author-name { font-weight: 500; color: var(--text); }
+.wk-author-count {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--surface-muted);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.wk-pr {
+  display: grid;
+  grid-template-columns: 44px 60px 1fr auto;
+  gap: 10px 12px;
+  align-items: baseline;
+  padding: 4px 0 4px 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.wk-pr a {
+  font-family: var(--font-mono);
+  color: var(--text);
+  text-decoration: none;
+}
+.wk-pr a:hover { text-decoration: underline; }
+.wk-tag {
+  font-size: 10px;
+  font-weight: 600;
+  text-align: center;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--surface-muted);
+  color: var(--text-soft);
+}
+.wk-date {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-soft);
+  white-space: nowrap;
+}
