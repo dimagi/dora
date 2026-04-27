@@ -24,7 +24,8 @@ def test_deploy_freq_prs_counts_merged_per_week(fixture_conn):
     headers, rows = metrics.m_deploy_freq_prs(fixture_conn, SINCE)
     out = [_row_dict(headers, r) for r in rows]
     assert {"repo": "acme/api", "week": "2025-W41", "deploys": 3} in out
-    assert {"repo": "acme/api", "week": "2025-W42", "deploys": 2} in out
+    assert {"repo": "acme/api", "week": "2025-W42", "deploys": 3} in out
+    # Was 2 before the bot fixture row; now 3 (PR 4, PR 5, + bot PR 8, all merged in W42).
     assert {"repo": "acme/api", "week": "2025-W43", "deploys": 1} in out
     assert {"repo": "acme/web", "week": "2025-W42", "deploys": 1} in out
 
@@ -69,10 +70,10 @@ def test_change_failure_rate_uses_labels(fixture_conn):
 def test_summary_rollup(fixture_conn):
     headers, rows = metrics.m_summary(fixture_conn, SINCE)
     out = [_row_dict(headers, r) for r in rows]
-    # acme/api: 6 merged PRs over 3 weeks, 1 caused-incident → CFR 16.7%
+    # acme/api: 7 merged PRs over 3 weeks (PR 1-5, 7 + bot PR 8).
     api = next(r for r in out if r["repo"] == "acme/api")
-    assert api["prs"] == 6
-    assert api["cfr"] == "16.7%"
+    assert api["prs"] == 7
+    assert api["cfr"] == "14.3%"
     # acme/web: 1 merged PR, 0 caused-incident → CFR 0.0%
     web = next(r for r in out if r["repo"] == "acme/web")
     assert web["prs"] == 1
@@ -135,12 +136,13 @@ def test_review_latency_buckets_and_window(fixture_conn):
                  and r["bucket"] == "S")
     assert s_w41["median_h"] == 34.0
 
-    # PR 5: changed_files=25 → L+
+    # PR 5 (changed_files=25) + bot PR 8 (changed_files=15) → both L+ in W42.
+    # Bot filtering is not yet applied (Task 2); n_prs=2 until then.
     lplus_w42 = next(r for r in out
                      if r["repo"] == "acme/api" and r["week"] == "2025-W42"
                      and r["bucket"] == "L+")
-    assert lplus_w42["n_prs"]    == 1
-    assert lplus_w42["median_h"] == 15.0
+    assert lplus_w42["n_prs"]    == 2
+    assert lplus_w42["median_h"] == 7.8
 
 
 def test_review_latency_excludes_null_changed_files(fixture_conn):
@@ -164,8 +166,9 @@ def test_large_prs_counts_changed_files_gte_10(fixture_conn):
     """Weekly count of merged PRs with changed_files >= 10."""
     headers, rows = metrics.m_large_prs(fixture_conn, SINCE)
     out = [_row_dict(headers, r) for r in rows]
-    # Only PR 5 (acme/api, W42, changed_files=25) qualifies in the fixture.
-    assert {"repo": "acme/api", "week": "2025-W42", "large_prs": 1} in out
+    # PR 5 (changed_files=25) + bot PR 8 (changed_files=15) both qualify in W42.
+    # Bot filtering is not yet applied (Task 2); count=2 until then.
+    assert {"repo": "acme/api", "week": "2025-W42", "large_prs": 2} in out
     # No other repo/week should appear.
     assert len(out) == 1
 
@@ -231,6 +234,19 @@ def test_metrics_registry_has_all():
     }
 
 
+def test_default_exclude_bots_covers_every_metric():
+    """DEFAULT_EXCLUDE_BOTS must have an entry for every key in METRICS."""
+    assert set(metrics.DEFAULT_EXCLUDE_BOTS) == set(metrics.METRICS)
+
+
+def test_author_filter_returns_empty_when_not_excluding():
+    assert metrics._author_filter(False) == ""
+
+
+def test_author_filter_emits_sql_fragment_when_excluding():
+    assert metrics._author_filter(True) == "AND author NOT LIKE '%[bot]'"
+
+
 def _insert_pr(conn, **kw):
     """Helper: insert a single PR row using the seed schema column order."""
     cols = ["repo", "number", "title", "author", "base",
@@ -275,7 +291,8 @@ def test_weekend_merges_keeps_sat_sun_only(fixture_conn):
     headers, rows = metrics.m_weekend_merges(fixture_conn, SINCE)
     out = [_row_dict(headers, r) for r in rows]
     prs = sorted(r["pr"] for r in out)
-    assert prs == [20, 21]                             # Mon excluded
+    # PR 8 (bot, Sun 2025-10-26) also appears; bot filtering not yet applied (Task 2).
+    assert prs == [8, 20, 21]                          # Mon excluded; bot included
     by_pr = {r["pr"]: r for r in out}
     assert by_pr[20]["dow"] == "Sat"
     assert by_pr[21]["dow"] == "Sun"

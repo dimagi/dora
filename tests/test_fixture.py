@@ -1,9 +1,9 @@
 """Sanity: the seeded fixture DB has the expected shape."""
 
 
-def test_fixture_has_seven_prs(fixture_conn):
+def test_fixture_has_eight_prs(fixture_conn):
     (n,) = fixture_conn.execute("SELECT COUNT(*) FROM pull_requests").fetchone()
-    assert n == 7
+    assert n == 8
 
 
 def test_fixture_has_three_deployments(fixture_conn):

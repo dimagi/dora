@@ -28,6 +28,24 @@ BUCKETS: tuple[tuple[str, int, int | None], ...] = (
     ("L+", 10, None),
 )
 
+# GitHub bot accounts have logins suffix-tagged with `[bot]`
+# (dependabot[bot], renovate[bot], github-actions[bot], etc.). SQLite
+# treats `[` as a literal character in LIKE patterns, so this matches.
+BOT_AUTHOR_PATTERN = "%[bot]"
+
+
+def _author_filter(exclude_bots: bool) -> str:
+    """SQL fragment to AND into a WHERE clause, or '' when not filtering.
+
+    Designed to be spliced AFTER an existing predicate, e.g.:
+        f"WHERE merged_at >= ? {_author_filter(exclude_bots)}"
+    The empty-string case yields a no-op (no trailing whitespace concerns).
+
+    Safe interpolation: BOT_AUTHOR_PATTERN is a hardcoded constant, not user
+    input — same pattern as FAILURE_LABELS in m_change_failure_rate.
+    """
+    return f"AND author NOT LIKE '{BOT_AUTHOR_PATTERN}'" if exclude_bots else ""
+
 
 def _assign_bucket(changed_files: int | None) -> str | None:
     """Return the bucket label for a given file count, or None if unbucketable."""
@@ -409,4 +427,22 @@ METRICS = {
         m_review_latency,
         "Weekly review latency in hours (merged − ready_for_review_at | opened_at), bucketed by changed_files (XS=1, S=2-3, M=4-9, L+=10+)",
     ),
+}
+
+# Per-metric bot-filter default. None means the metric doesn't read the
+# `author` column at all (e.g. `deploy-freq` reads the deployments table)
+# OR the metric is composite and resolves bot policy per-component
+# internally (e.g. `summary`).
+DEFAULT_EXCLUDE_BOTS: dict[str, bool | None] = {
+    "deploy-freq-prs":     False,  # bot PRs ship real changes
+    "deploy-freq":         None,   # deployments table — no author
+    "lead-time":           True,   # bot merges happen in seconds; distort distribution
+    "change-failure-rate": False,  # a bot-shipped defect is still a defect
+    "change-failure-prs":  False,  # drill-down for CFR; must match
+    "hotfixes":            False,  # bots can ship hotfixes; list them if they do
+    "hotfix-count":        False,  # aggregate of hotfixes; matches
+    "summary":             None,   # composite — handled internally
+    "review-latency":      True,   # auto-merged; not a human review wait
+    "large-prs":           True,   # dependabot weekly mega-bumps dominate L+
+    "weekend-merges":      True,   # bot cron schedules aren't human patterns
 }
