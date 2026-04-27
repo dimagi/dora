@@ -317,3 +317,186 @@ def test_weekend_merges_excludes_unmerged(fixture_conn):
 def test_weekend_merges_headers(fixture_conn):
     headers, _ = metrics.m_weekend_merges(fixture_conn, SINCE)
     assert headers == ["repo", "week", "pr", "author", "title", "merged", "dow"]
+
+
+def test_deploy_freq_prs_counts_bot_merges_by_default(fixture_conn):
+    """deploy-freq-prs INCLUDES bots by default (per the registry)."""
+    headers, rows = metrics.m_deploy_freq_prs(fixture_conn, SINCE)
+    out = [_row_dict(headers, r) for r in rows]
+    # PR 8 (dependabot, W42) bumps acme/api W42 to 3.
+    assert {"repo": "acme/api", "week": "2025-W42", "deploys": 3} in out
+
+
+def test_deploy_freq_prs_drops_bots_when_exclude_bots_set(fixture_conn):
+    headers, rows = metrics.m_deploy_freq_prs(fixture_conn, SINCE, exclude_bots=True)
+    out = [_row_dict(headers, r) for r in rows]
+    # Bot dropped → W42 acme/api back to 2 (PRs 1, 2, 3 only).
+    assert {"repo": "acme/api", "week": "2025-W42", "deploys": 2} in out
+
+
+def test_lead_time_drops_bots_when_exclude_bots_set(fixture_conn):
+    """The bot PR has a 30-minute lead time that would skew the median."""
+    headers, rows = metrics.m_lead_time(fixture_conn, SINCE, exclude_bots=True)
+    out = [_row_dict(headers, r) for r in rows]
+    # W42 (SQLite: 2025-10-20..2025-10-26) has PRs 4 (5h) and 5 (15h).
+    # Bot PR 8 (0.5h) is excluded → prs=2, median=(5+15)/2=10h.
+    w42 = next(r for r in out if r["repo"] == "acme/api" and r["week"] == "2025-W42")
+    assert w42["prs"] == 2
+    assert w42["median_h"] == 10.0
+
+
+def test_lead_time_includes_bots_when_explicitly_included(fixture_conn):
+    headers, rows = metrics.m_lead_time(fixture_conn, SINCE, exclude_bots=False)
+    out = [_row_dict(headers, r) for r in rows]
+    # With the bot PR 8 (0.5h), W42 has PRs 4, 5, 8 → prs=3.
+    w42 = next(r for r in out if r["repo"] == "acme/api" and r["week"] == "2025-W42")
+    assert w42["prs"] == 3
+
+
+def test_review_latency_drops_bots_when_exclude_bots_set(fixture_conn):
+    headers, rows = metrics.m_review_latency(fixture_conn, SINCE, exclude_bots=True)
+    out = [_row_dict(headers, r) for r in rows]
+    # PR 8 has changed_files=15 (L+) and lands in W42. Without it the W42 L+ row
+    # should have only PR 5 (n_prs=1, median 15h) — the original pre-bot expectation.
+    lplus_w42 = next(r for r in out
+                     if r["repo"] == "acme/api" and r["week"] == "2025-W42"
+                     and r["bucket"] == "L+")
+    assert lplus_w42["n_prs"]    == 1
+    assert lplus_w42["median_h"] == 15.0
+
+
+def test_large_prs_drops_bots_when_exclude_bots_set(fixture_conn):
+    headers, rows = metrics.m_large_prs(fixture_conn, SINCE, exclude_bots=True)
+    out = [_row_dict(headers, r) for r in rows]
+    # Without the bot, only PR 5 (W42, changed_files=25) qualifies.
+    assert {"repo": "acme/api", "week": "2025-W42", "large_prs": 1} in out
+    assert len(out) == 1
+
+
+def test_large_prs_keeps_bots_when_explicitly_included(fixture_conn):
+    headers, rows = metrics.m_large_prs(fixture_conn, SINCE, exclude_bots=False)
+    out = [_row_dict(headers, r) for r in rows]
+    # PR 5 (W42, 25 files) + PR 8 (W42, 15 files) → W42 count = 2.
+    assert {"repo": "acme/api", "week": "2025-W42", "large_prs": 2} in out
+
+
+def test_weekend_merges_drops_bots_when_exclude_bots_set(fixture_conn):
+    """PR 8 merged Sunday; with exclude_bots it must not appear."""
+    _, rows = metrics.m_weekend_merges(fixture_conn, SINCE, exclude_bots=True)
+    assert not any(r[2] == 8 for r in rows)  # column 2 = pr (number)
+
+
+def test_weekend_merges_keeps_bots_when_explicitly_included(fixture_conn):
+    _, rows = metrics.m_weekend_merges(fixture_conn, SINCE, exclude_bots=False)
+    assert any(r[2] == 8 for r in rows)
+
+
+def test_change_failure_rate_keeps_bots_by_default(fixture_conn):
+    """CFR includes bots: a bot-shipped defect is still a defect."""
+    headers, rows = metrics.m_change_failure_rate(fixture_conn, SINCE)
+    out = [_row_dict(headers, r) for r in rows]
+    # Bot PR 8 lands in W42 (SQLite: 2025-10-20..2025-10-26) alongside PRs 4,5.
+    # W42 acme/api: 3 merged (PRs 4,5 + bot 8), 0 caused-incident → 0.0%
+    w42 = next(r for r in out if r["repo"] == "acme/api" and r["week"] == "2025-W42")
+    assert w42["deploys"] == 3
+    assert w42["failures"] == 0
+    assert w42["failure_pct"] == 0.0
+
+
+def test_change_failure_rate_drops_bots_when_excluded(fixture_conn):
+    headers, rows = metrics.m_change_failure_rate(fixture_conn, SINCE, exclude_bots=True)
+    out = [_row_dict(headers, r) for r in rows]
+    # Bot dropped → W42 denominator = 2 (PRs 4,5); still 0 failures → 0.0%
+    w42 = next(r for r in out if r["repo"] == "acme/api" and r["week"] == "2025-W42")
+    assert w42["deploys"]     == 2
+    assert w42["failures"]    == 0
+    assert w42["failure_pct"] == 0.0
+
+
+def test_hotfix_count_keeps_bots_by_default(fixture_conn):
+    """hotfix-count includes bots — only relevant if a bot ever ships a hotfix."""
+    fixture_conn.execute("""
+        INSERT INTO pull_requests
+          (repo, number, title, author, base, opened_at, merged_at,
+           first_commit_at, merge_sha, labels,
+           additions, deletions, changed_files, ready_for_review_at)
+        VALUES
+          ('acme/api', 50, 'bot hotfix', 'renovate[bot]', 'main',
+           '2025-10-21T00:00:00Z', '2025-10-21T01:00:00Z',
+           '2025-10-21T00:00:00Z', 'sha50', 'hotfix',
+           5, 1, 1, NULL)
+    """)
+    headers, rows = metrics.m_hotfix_count(fixture_conn, SINCE)
+    out = [_row_dict(headers, r) for r in rows]
+    assert {"repo": "acme/api", "week": "2025-W42", "hotfix_count": 1} in out
+
+
+def test_hotfix_count_drops_bots_when_exclude_bots_set(fixture_conn):
+    fixture_conn.execute("""
+        INSERT INTO pull_requests
+          (repo, number, title, author, base, opened_at, merged_at,
+           first_commit_at, merge_sha, labels,
+           additions, deletions, changed_files, ready_for_review_at)
+        VALUES
+          ('acme/api', 50, 'bot hotfix', 'renovate[bot]', 'main',
+           '2025-10-21T00:00:00Z', '2025-10-21T01:00:00Z',
+           '2025-10-21T00:00:00Z', 'sha50', 'hotfix',
+           5, 1, 1, NULL)
+    """)
+    headers, rows = metrics.m_hotfix_count(fixture_conn, SINCE, exclude_bots=True)
+    out = [_row_dict(headers, r) for r in rows]
+    assert not any(r["repo"] == "acme/api" and r["week"] == "2025-W42"
+                   for r in out)
+
+
+def test_change_failure_prs_drops_bot_authored_when_exclude_bots_set(fixture_conn):
+    """A bot-authored caused-incident PR is filtered when exclude_bots=True."""
+    fixture_conn.execute("""
+        INSERT INTO pull_requests
+          (repo, number, title, author, base, opened_at, merged_at,
+           first_commit_at, merge_sha, labels,
+           additions, deletions, changed_files, ready_for_review_at)
+        VALUES
+          ('acme/api', 60, 'bot ship that broke prod', 'dependabot[bot]', 'main',
+           '2025-10-15T00:00:00Z', '2025-10-15T01:00:00Z',
+           '2025-10-15T00:00:00Z', 'sha60', 'caused-incident',
+           5, 1, 1, NULL)
+    """)
+    # Default: bot caused-incident PR is listed (CFR includes bots).
+    _, default_rows = metrics.m_change_failure_prs(fixture_conn, SINCE)
+    assert any(r[2] == 60 for r in default_rows)   # column 2 = pr (number)
+    # exclude_bots=True: bot caused-incident PR is dropped.
+    _, ex_rows = metrics.m_change_failure_prs(fixture_conn, SINCE, exclude_bots=True)
+    assert not any(r[2] == 60 for r in ex_rows)
+    # The pre-existing human-authored caused-incident PR (PR 2) still shows.
+    assert any(r[2] == 2 for r in ex_rows)
+
+
+def test_hotfixes_preceding_merges_drops_bots_when_exclude_bots_set(fixture_conn):
+    """The inner preceding-merges query in m_hotfixes honors exclude_bots.
+
+    Without bot-filter coverage on this inner query, a regression that
+    only filtered the outer hotfix query would silently pass.
+    """
+    # Fixture has PR 6 (acme/web, hotfix, merged 2025-10-22). Insert a
+    # bot-authored PR merged just before it so it would normally appear
+    # in the "preceded-by" rows of the hotfix.
+    fixture_conn.execute("""
+        INSERT INTO pull_requests
+          (repo, number, title, author, base, opened_at, merged_at,
+           first_commit_at, merge_sha, labels,
+           additions, deletions, changed_files, ready_for_review_at)
+        VALUES
+          ('acme/web', 70, 'bot dep bump', 'dependabot[bot]', 'main',
+           '2025-10-21T00:00:00Z', '2025-10-21T12:00:00Z',
+           '2025-10-21T00:00:00Z', 'sha70', '',
+           10, 2, 2, NULL)
+    """)
+    # Default: bot PR 70 appears as preceded-by for hotfix PR 6.
+    _, default_rows = metrics.m_hotfixes(fixture_conn, SINCE)
+    assert any(r[1] == "#70" and r[2] == "preceded-by" for r in default_rows)
+    # exclude_bots=True: bot PR 70 dropped from preceded-by list.
+    _, ex_rows = metrics.m_hotfixes(fixture_conn, SINCE, exclude_bots=True)
+    assert not any(r[1] == "#70" for r in ex_rows)
+    # The hotfix PR itself still shows under "hotfix" relation.
+    assert any(r[1] == "#6" and r[2] == "hotfix" for r in ex_rows)

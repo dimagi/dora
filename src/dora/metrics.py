@@ -57,14 +57,15 @@ def _assign_bucket(changed_files: int | None) -> str | None:
     return None
 
 
-def m_deploy_freq_prs(conn: sqlite3.Connection, since: str):
+def m_deploy_freq_prs(conn: sqlite3.Connection, since: str, exclude_bots: bool = False):
+    bot_clause = _author_filter(exclude_bots)
     cur = conn.execute(
-        """
+        f"""
         SELECT repo,
                strftime('%Y-W%W', merged_at) AS week,
                COUNT(*) AS deploys
         FROM pull_requests
-        WHERE merged_at IS NOT NULL AND merged_at >= ?
+        WHERE merged_at IS NOT NULL AND merged_at >= ? {bot_clause}
         GROUP BY repo, week
         ORDER BY repo, week
         """,
@@ -91,21 +92,22 @@ def m_deploy_freq(conn: sqlite3.Connection, since: str):
     return [c[0] for c in cur.description], cur.fetchall()
 
 
-def m_lead_time(conn: sqlite3.Connection, since: str):
+def m_lead_time(conn: sqlite3.Connection, since: str, exclude_bots: bool = False):
     """Weekly lead time (merged_at - first_commit_at) in hours.
 
     Aggregation in Python because SQLite has no PERCENTILE_CONT; p90 is
     nearest-rank (fine for small weekly samples).
     """
+    bot_clause = _author_filter(exclude_bots)
     cur = conn.execute(
-        """
+        f"""
         SELECT repo,
                strftime('%Y-W%W', merged_at) AS week,
                (julianday(merged_at) - julianday(first_commit_at)) * 24.0 AS hours
         FROM pull_requests
         WHERE merged_at       IS NOT NULL
           AND first_commit_at IS NOT NULL
-          AND merged_at >= ?
+          AND merged_at >= ? {bot_clause}
         """,
         (since,),
     )
@@ -124,8 +126,9 @@ def m_lead_time(conn: sqlite3.Connection, since: str):
     return ["repo", "week", "prs", "mean_h", "median_h", "p90_h"], rows
 
 
-def m_change_failure_rate(conn: sqlite3.Connection, since: str):
+def m_change_failure_rate(conn: sqlite3.Connection, since: str, exclude_bots: bool = False):
     # Safe interpolation: FAILURE_LABELS is a hardcoded constant, not user input.
+    bot_clause = _author_filter(exclude_bots)
     fail_expr = " OR ".join(f"labels LIKE '%{lab}%'" for lab in FAILURE_LABELS)
     cur = conn.execute(
         f"""
@@ -136,7 +139,7 @@ def m_change_failure_rate(conn: sqlite3.Connection, since: str):
                ROUND(100.0 * SUM(CASE WHEN {fail_expr} THEN 1 ELSE 0 END)
                      / COUNT(*), 1) AS failure_pct
         FROM pull_requests
-        WHERE merged_at IS NOT NULL AND merged_at >= ?
+        WHERE merged_at IS NOT NULL AND merged_at >= ? {bot_clause}
         GROUP BY repo, week
         ORDER BY repo, week
         """,
@@ -145,13 +148,14 @@ def m_change_failure_rate(conn: sqlite3.Connection, since: str):
     return [c[0] for c in cur.description], cur.fetchall()
 
 
-def m_change_failure_prs(conn: sqlite3.Connection, since: str):
+def m_change_failure_prs(conn: sqlite3.Connection, since: str, exclude_bots: bool = False):
     """Individual PRs labelled `caused-incident`, with week + PR number.
 
     Drill-down for change-failure-rate: the rate metric tells you how
     often things go wrong; this metric tells you exactly which PRs.
     Dashboard renders these as clickable links to the GitHub PR pages.
     """
+    bot_clause = _author_filter(exclude_bots)
     fail_expr = " OR ".join(f"labels LIKE '%{lab}%'" for lab in FAILURE_LABELS)
     cur = conn.execute(
         f"""
@@ -164,7 +168,7 @@ def m_change_failure_prs(conn: sqlite3.Connection, since: str):
         FROM pull_requests
         WHERE merged_at IS NOT NULL
           AND merged_at >= ?
-          AND ({fail_expr})
+          AND ({fail_expr}) {bot_clause}
         ORDER BY repo, week DESC, number DESC
         """,
         (since,),
@@ -221,7 +225,7 @@ def m_summary(conn: sqlite3.Connection, since: str):
     return ["repo", "prs", "prs_per_week", "median_lead_h", "cfr"], rows
 
 
-def m_review_latency(conn: sqlite3.Connection, since: str):
+def m_review_latency(conn: sqlite3.Connection, since: str, exclude_bots: bool = False):
     """Weekly review latency in hours, bucketed by changed_files.
 
     review_window = merged_at − COALESCE(ready_for_review_at, opened_at)
@@ -232,8 +236,9 @@ def m_review_latency(conn: sqlite3.Connection, since: str):
     Aggregation in Python because SQLite has no PERCENTILE_CONT; p90 is
     nearest-rank (fine for small weekly samples). Same shape as m_lead_time.
     """
+    bot_clause = _author_filter(exclude_bots)
     cur = conn.execute(
-        """
+        f"""
         SELECT repo,
                strftime('%Y-W%W', merged_at) AS week,
                changed_files,
@@ -242,7 +247,7 @@ def m_review_latency(conn: sqlite3.Connection, since: str):
         FROM pull_requests
         WHERE merged_at     IS NOT NULL
           AND changed_files IS NOT NULL
-          AND merged_at >= ?
+          AND merged_at >= ? {bot_clause}
         """,
         (since,),
     )
@@ -267,15 +272,16 @@ def m_review_latency(conn: sqlite3.Connection, since: str):
     return ["repo", "week", "bucket", "n_prs", "median_h", "p90_h"], rows
 
 
-def m_large_prs(conn: sqlite3.Connection, since: str):
+def m_large_prs(conn: sqlite3.Connection, since: str, exclude_bots: bool = False):
     """Weekly count of merged PRs with changed_files >= 10 (the L+ bucket).
 
     Surfaces churn risk: large PRs are harder to review and more likely
     to ship defects. PRs with NULL changed_files are excluded (legacy
     rows from before the schema migration).
     """
+    bot_clause = _author_filter(exclude_bots)
     cur = conn.execute(
-        """
+        f"""
         SELECT repo,
                strftime('%Y-W%W', merged_at) AS week,
                COUNT(*) AS large_prs
@@ -283,7 +289,7 @@ def m_large_prs(conn: sqlite3.Connection, since: str):
         WHERE merged_at     IS NOT NULL
           AND merged_at     >= ?
           AND changed_files IS NOT NULL
-          AND changed_files >= 10
+          AND changed_files >= 10 {bot_clause}
         GROUP BY repo, week
         ORDER BY repo, week
         """,
@@ -292,22 +298,23 @@ def m_large_prs(conn: sqlite3.Connection, since: str):
     return [c[0] for c in cur.description], cur.fetchall()
 
 
-def m_hotfix_count(conn: sqlite3.Connection, since: str):
+def m_hotfix_count(conn: sqlite3.Connection, since: str, exclude_bots: bool = False):
     """Weekly count of merged PRs labelled `hotfix`.
 
     Aggregate of the same set m_hotfixes lists individually. Use the
     per-PR drill-down in m_hotfixes to investigate; this rolls them up
     for a KPI tile.
     """
+    bot_clause = _author_filter(exclude_bots)
     cur = conn.execute(
-        """
+        f"""
         SELECT repo,
                strftime('%Y-W%W', merged_at) AS week,
                COUNT(*) AS hotfix_count
         FROM pull_requests
         WHERE labels LIKE '%hotfix%'
           AND merged_at IS NOT NULL
-          AND merged_at >= ?
+          AND merged_at >= ? {bot_clause}
         GROUP BY repo, week
         ORDER BY repo, week
         """,
@@ -316,15 +323,16 @@ def m_hotfix_count(conn: sqlite3.Connection, since: str):
     return [c[0] for c in cur.description], cur.fetchall()
 
 
-def m_weekend_merges(conn: sqlite3.Connection, since: str):
+def m_weekend_merges(conn: sqlite3.Connection, since: str, exclude_bots: bool = False):
     """Individual PRs merged on a Saturday or Sunday (UTC).
 
     SQLite strftime('%w', t): 0=Sunday, 6=Saturday. Output one row per
     PR so the dashboard can both count weekly totals and break down by
     author. Day-of-week label ('Sat' / 'Sun') is included for display.
     """
+    bot_clause = _author_filter(exclude_bots)
     cur = conn.execute(
-        """
+        f"""
         SELECT repo,
                strftime('%Y-W%W', merged_at) AS week,
                number AS pr,
@@ -338,7 +346,7 @@ def m_weekend_merges(conn: sqlite3.Connection, since: str):
         FROM pull_requests
         WHERE merged_at IS NOT NULL
           AND merged_at >= ?
-          AND strftime('%w', merged_at) IN ('0', '6')
+          AND strftime('%w', merged_at) IN ('0', '6') {bot_clause}
         ORDER BY repo, merged_at DESC, number DESC
         """,
         (since,),
@@ -346,15 +354,16 @@ def m_weekend_merges(conn: sqlite3.Connection, since: str):
     return [c[0] for c in cur.description], cur.fetchall()
 
 
-def m_hotfixes(conn: sqlite3.Connection, since: str):
+def m_hotfixes(conn: sqlite3.Connection, since: str, exclude_bots: bool = False):
     """Each hotfix PR plus its 3 preceding merges — investigative tool."""
+    bot_clause = _author_filter(exclude_bots)
     hotfixes = conn.execute(
-        """
+        f"""
         SELECT repo, number, merged_at, author, title, base
         FROM pull_requests
         WHERE labels LIKE '%hotfix%'
           AND merged_at IS NOT NULL
-          AND merged_at >= ?
+          AND merged_at >= ? {bot_clause}
         ORDER BY merged_at DESC
         """,
         (since,),
@@ -364,12 +373,12 @@ def m_hotfixes(conn: sqlite3.Connection, since: str):
     for repo, num, merged_at, author, title, base in hotfixes:
         rows.append((repo, f"#{num}", "hotfix", merged_at[:10], author, title[:70]))
         preceding = conn.execute(
-            """
+            f"""
             SELECT number, merged_at, author, title
             FROM pull_requests
             WHERE repo = ? AND base = ?
               AND merged_at < ? AND merged_at IS NOT NULL
-              AND number != ?
+              AND number != ? {bot_clause}
             ORDER BY merged_at DESC
             LIMIT 3
             """,
