@@ -21,6 +21,8 @@ let currentReport  = null;
 let currentMetrics = null;       // byMetric(currentReport) — kept so we can re-render on range change
 let currentRepo    = null;
 let charts         = [];
+let currentBotFlags  = {};        // metric name → exclude_bots (bool | null)
+let currentBotPolicy = "default"; // "default" | "all-excluded" | "all-included"
 
 // Date range state.
 // weeksAxis is the sorted union of `week` values across all metrics.
@@ -54,6 +56,7 @@ async function loadFromUrl(url, label) {
     const report = await res.json();
     currentReport  = report;
     currentMetrics = byMetric(report);
+    hydrateBotState(report);
     weeksAxis      = computeWeeksAxis(report);
     initRangeFromData();
     localStorage.setItem(LS_KEY, url);
@@ -73,6 +76,7 @@ async function loadFromFile(file) {
     const text = await file.text();
     currentReport  = JSON.parse(text);
     currentMetrics = byMetric(currentReport);
+    hydrateBotState(currentReport);
     weeksAxis      = computeWeeksAxis(currentReport);
     initRangeFromData();
     srcInfo.textContent = `Source: ${file.name} (local file)`;
@@ -100,6 +104,14 @@ function byMetric(report) {
   const out = {};
   for (const m of report.metrics || []) out[m.metric] = m.data || [];
   return out;
+}
+
+function hydrateBotState(report) {
+  currentBotFlags = Object.fromEntries(
+    (report.metrics || []).map(m =>
+      [m.metric, m.exclude_bots !== undefined ? m.exclude_bots : null])
+  );
+  currentBotPolicy = report.bot_policy || "default";
 }
 
 function uniqueRepos(metrics) {
@@ -158,7 +170,13 @@ function hotfixTier(perWeek) {
 
 const TIER_LABEL = { elite: "Elite", high: "High", medium: "Medium", low: "Low", na: "N/A" };
 
-function kpiCard({ label, value, unit, subText, tier, info }) {
+function botBadge(excluded) {
+  return excluded === true
+    ? `<span class="bot-badge" title="Bot-authored PRs are excluded from this metric">humans only</span>`
+    : "";
+}
+
+function kpiCard({ label, value, unit, subText, tier, info, botFlag }) {
   const infoIcon = info
     ? `<span class="info-icon" tabindex="0" role="img" aria-label="About ${escapeHtml(label)}" data-tip="${escapeHtml(info)}">i</span>`
     : "";
@@ -166,9 +184,19 @@ function kpiCard({ label, value, unit, subText, tier, info }) {
     <div class="kpi">
       <span class="kpi-label">${escapeHtml(label)}${infoIcon}</span>
       <span class="kpi-value">${escapeHtml(value)}<span class="kpi-unit">${escapeHtml(unit || "")}</span></span>
-      <span class="kpi-sub"><span class="tier tier-${tier}">${TIER_LABEL[tier]}</span>${escapeHtml(subText)}</span>
+      <span class="kpi-sub"><span class="tier tier-${tier}">${TIER_LABEL[tier]}</span>${escapeHtml(subText)}${botBadge(botFlag)}</span>
     </div>
   `;
+}
+
+function annotatePanelSub(panelSelector, metricName) {
+  const el = document.querySelector(panelSelector + " .panel-sub");
+  if (!el) return;
+  // Strip any chip from a previous render then optionally re-add.
+  el.querySelectorAll(".bot-badge").forEach(n => n.remove());
+  if (currentBotFlags[metricName] === true) {
+    el.insertAdjacentHTML("beforeend", " " + botBadge(true));
+  }
 }
 
 function escapeHtml(s) {
@@ -181,6 +209,21 @@ function readVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
+function renderBotBanner() {
+  const el = document.getElementById("bot-banner");
+  if (!el) return;
+  if (currentBotPolicy === "all-excluded") {
+    el.hidden = false;
+    el.innerHTML = `<strong>Bot policy:</strong> humans only — overriding per-metric defaults. Re-run <code>dora report</code> without <code>--exclude-bots</code> for the default view.`;
+  } else if (currentBotPolicy === "all-included") {
+    el.hidden = false;
+    el.innerHTML = `<strong>Bot policy:</strong> all PRs — overriding per-metric defaults (some metrics normally exclude bots). Re-run <code>dora report</code> without <code>--include-bots</code> for the default view.`;
+  } else {
+    el.hidden = true;
+    el.innerHTML = "";
+  }
+}
+
 // --------- rendering ---------
 
 function resetCharts() {
@@ -191,6 +234,7 @@ function resetCharts() {
 function render() {
   showState({});
   dash.hidden = false;
+  renderBotBanner();
 
   const metrics = currentMetrics;
   const repos = uniqueRepos(metrics);
@@ -248,6 +292,16 @@ function renderForRepo(metrics, repo) {
   renderHotfixes(hotfixes);
   renderReviewLatencyChart(reviewLatency);
   renderWeekendMerges(weekendMerges);
+
+  // Annotate each panel's subtitle with a "humans only" chip when its
+  // metric excluded bots. Centralised here so panel renderers don't each
+  // need to know about the policy.
+  annotatePanelSub('.panel:has(#freqChart)',          "deploy-freq-prs");
+  annotatePanelSub('.panel:has(#leadChart)',          "lead-time");
+  annotatePanelSub('.panel:has(#cfrChart)',           "change-failure-rate");
+  annotatePanelSub('.panel:has(#hotfixes)',           "hotfixes");
+  annotatePanelSub('.panel:has(#reviewLatencyChart)', "review-latency");
+  annotatePanelSub('.panel:has(#weekend-merges)',     "weekend-merges");
 }
 
 function renderKPIs(summary, freqPrs, freqDeploys, leadTime, cfr, largePrs, hotfixCount) {
@@ -313,6 +367,7 @@ function renderKPIs(summary, freqPrs, freqDeploys, leadTime, cfr, largePrs, hotf
       unit: deployUnit,
       subText,
       tier: deployFreqTier(deployPerWk),
+      botFlag: currentBotFlags["deploy-freq-prs"],
       info: dRows.length
         ? "Average successful deploys per week. Source: GitHub Deployments API for the configured environment (success + inactive statuses)."
         : "Average merged PRs per week (proxy for shipped changes). Source: PRs merged into the base branch — used because no Deployments are recorded.",
@@ -323,6 +378,7 @@ function renderKPIs(summary, freqPrs, freqDeploys, leadTime, cfr, largePrs, hotf
       unit: " h",
       subText: leadSubText,
       tier: leadTimeTier(leadMedian),
+      botFlag: currentBotFlags["lead-time"],
       info: "Median hours from first commit on a PR's branch to its merge into the base branch, averaged across the window. Source: PR commits + merge timestamp from the GitHub API.",
     }),
     kpiCard({
@@ -331,6 +387,7 @@ function renderKPIs(summary, freqPrs, freqDeploys, leadTime, cfr, largePrs, hotf
       unit: " %",
       subText: cfrSubText,
       tier: cfrTier(cfrPct),
+      botFlag: currentBotFlags["change-failure-rate"],
       info: "PRs labelled `caused-incident` ÷ all merged PRs across the window. Apply the label to the PR that SHIPPED the defect (not the PR that fixed it). See the drill-down list below the chart.",
     }),
     kpiCard({
@@ -339,6 +396,7 @@ function renderKPIs(summary, freqPrs, freqDeploys, leadTime, cfr, largePrs, hotf
       unit: "",
       subText,
       tier: largePrsTier(largePerWk),
+      botFlag: currentBotFlags["large-prs"],
       info: "Average per-week count of merged PRs with 10 or more changed files. Large PRs are slower to review and more failure-prone — a sustained rate above ~2/wk is a smell.",
     }),
     kpiCard({
@@ -347,6 +405,7 @@ function renderKPIs(summary, freqPrs, freqDeploys, leadTime, cfr, largePrs, hotf
       unit: "",
       subText,
       tier: hotfixTier(hotfixPerWk),
+      botFlag: currentBotFlags["hotfix-count"],
       info: "Average per-week count of merged PRs labelled `hotfix`. The `hotfix` label marks the PR that FIXED a prior defect; consistently nonzero rates point to upstream quality issues.",
     }),
     kpiCard({
