@@ -202,3 +202,26 @@ else
 fi
 role_arn="arn:aws:iam::${account_id}:role/${role_name}"
 echo "✓ role ready: $role_arn" >&2
+
+# --- 6. Inline IAM policy --------------------------------------------------
+
+echo "→ applying inline S3 policy to role" >&2
+inline_policy="$(jq -nc \
+  --arg bucket "$bucket_name" \
+  '{
+    Version: "2012-10-17",
+    Statement: [{
+      Effect: "Allow",
+      Action: ["s3:GetObject", "s3:PutObject"],
+      Resource: [
+        "arn:aws:s3:::\($bucket)/dora.db",
+        "arn:aws:s3:::\($bucket)/dora-report.json"
+      ]
+    }]
+  }')"
+aws iam put-role-policy \
+  --role-name "$role_name" \
+  --policy-name "dora-s3-access" \
+  --policy-document "$inline_policy" \
+  >/dev/null
+echo "✓ inline S3 policy applied" >&2

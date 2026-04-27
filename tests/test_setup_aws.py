@@ -300,3 +300,30 @@ def test_no_branch_emits_recommendation(fake_aws):
     result = subprocess.run(["bash", str(SCRIPT), *VALID_ARGS], capture_output=True, text=True)
     assert result.returncode == 0
     assert "--branch main" in result.stderr  # recommendation note
+
+
+def test_inline_policy_grants_only_two_keys(fake_aws):
+    _stub_happy_path(fake_aws, role_present=True)
+    result = subprocess.run(["bash", str(SCRIPT), *VALID_ARGS], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    pol_calls = [c for c in fake_aws.calls if c[:2] == ["iam", "put-role-policy"]]
+    assert len(pol_calls) == 1
+    argv = " ".join(pol_calls[0])
+    assert "arn:aws:s3:::my-dora-bucket/dora.db" in argv
+    assert "arn:aws:s3:::my-dora-bucket/dora-report.json" in argv
+    assert "arn:aws:s3:::my-dora-bucket/*" not in argv
+    assert "s3:GetObject" in argv
+    assert "s3:PutObject" in argv
+    # Spec drops PutObjectAcl (bucket policy supersedes ACLs).
+    assert "s3:PutObjectAcl" not in argv
+
+
+def test_inline_policy_uses_existing_bucket_name(fake_aws):
+    _stub_happy_path(fake_aws, role_present=True)
+    args = ["--repo", "o/n", "--region", "us-east-1", "--existing-bucket", "shared-ci"]
+    result = subprocess.run(["bash", str(SCRIPT), *args], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    pol_calls = [c for c in fake_aws.calls if c[:2] == ["iam", "put-role-policy"]]
+    argv = " ".join(pol_calls[0])
+    assert "arn:aws:s3:::shared-ci/dora.db" in argv
+    assert "arn:aws:s3:::shared-ci/dora-report.json" in argv
