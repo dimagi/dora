@@ -3,6 +3,8 @@
 import subprocess
 from pathlib import Path
 
+import pytest
+
 SCRIPT = Path(__file__).resolve().parents[1] / "examples" / "setup-aws.sh"
 
 
@@ -20,9 +22,6 @@ def test_help_flag_prints_usage_and_exits_zero():
     assert "--region" in result.stdout
     assert "--branch" in result.stdout
     assert "--role-name" in result.stdout
-
-
-import pytest
 
 
 @pytest.mark.parametrize(
