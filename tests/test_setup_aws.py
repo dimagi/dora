@@ -327,3 +327,28 @@ def test_inline_policy_uses_existing_bucket_name(fake_aws):
     argv = " ".join(pol_calls[0])
     assert "arn:aws:s3:::shared-ci/dora.db" in argv
     assert "arn:aws:s3:::shared-ci/dora-report.json" in argv
+
+
+def test_summary_block_owned_bucket(fake_aws):
+    _stub_happy_path(fake_aws, role_present=True, bucket_status=200)
+    result = subprocess.run(["bash", str(SCRIPT), *VALID_ARGS], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    out = result.stdout
+    assert "AWS setup complete." in out
+    assert "Bucket:   my-dora-bucket (us-east-1)" in out
+    assert "Role ARN: arn:aws:iam::123456789012:role/dora-report-uploader" in out
+    assert "role-to-assume: arn:aws:iam::123456789012:role/dora-report-uploader" in out
+    assert "aws-region:     us-east-1" in out
+    assert "bucket:         my-dora-bucket" in out
+    assert "https://dimagi.github.io/dora/?url=https://my-dora-bucket.s3.us-east-1.amazonaws.com/dora-report.json" in out
+
+
+def test_summary_block_existing_bucket_includes_caveat(fake_aws):
+    _stub_happy_path(fake_aws, role_present=True)
+    args = ["--repo", "o/n", "--region", "us-east-1", "--existing-bucket", "shared-ci"]
+    result = subprocess.run(["bash", str(SCRIPT), *args], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    out = result.stdout
+    assert "shared-ci" in out
+    # Note about CORS / public-policy on the user's responsibility
+    assert "CORS" in out and "policy" in out

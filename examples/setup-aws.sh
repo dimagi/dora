@@ -225,3 +225,34 @@ aws iam put-role-policy \
   --policy-document "$inline_policy" \
   >/dev/null
 echo "✓ inline S3 policy applied" >&2
+
+# --- Summary ---------------------------------------------------------------
+
+dashboard_url="https://dimagi.github.io/dora/?url=https://${bucket_name}.s3.${region}.amazonaws.com/dora-report.json"
+
+cat <<EOF
+─────────────────────────────────────────────────
+AWS setup complete.
+
+Bucket:   ${bucket_name} (${region})
+Role ARN: ${role_arn}
+
+In your dora-report.yml workflow, set:
+  role-to-assume: ${role_arn}
+  aws-region:     ${region}
+  bucket:         ${bucket_name}
+
+Public dashboard URL once the workflow runs:
+  ${dashboard_url}
+EOF
+
+if [[ -n "$existing_bucket" ]]; then
+  cat <<EOF
+
+Note: --existing-bucket was used. Bucket CORS and public-read policy
+on '${bucket_name}' are your responsibility — see README "S3 variant"
+for the JSON snippets.
+EOF
+fi
+
+echo "─────────────────────────────────────────────────"
