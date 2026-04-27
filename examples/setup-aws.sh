@@ -95,3 +95,40 @@ else
   )"
   echo "✓ OIDC provider created: $oidc_provider_arn" >&2
 fi
+
+# --- 2. S3 bucket ----------------------------------------------------------
+
+if [[ -n "$existing_bucket" ]]; then
+  bucket_name="$existing_bucket"
+  echo "→ using existing bucket: $bucket_name (skipping create / CORS / public-policy)" >&2
+else
+  bucket_name="$bucket"
+  echo "→ checking bucket: s3://$bucket_name" >&2
+
+  # head-bucket: exit 0 = exists & ours, non-zero = absent OR not ours.
+  # We accept the simplification: if head-bucket succeeds, reuse; otherwise create.
+  # If create-bucket then fails because someone else owns the name globally,
+  # AWS returns BucketAlreadyExists / BucketAlreadyOwnedByYou which we surface verbatim.
+  if aws s3api head-bucket --bucket "$bucket_name" 2>/dev/null; then
+    echo "✓ bucket already exists, reusing" >&2
+  else
+    echo "→ creating bucket" >&2
+    if [[ "$region" == "us-east-1" ]]; then
+      aws s3api create-bucket --bucket "$bucket_name" --region "$region" >/dev/null
+    else
+      aws s3api create-bucket \
+        --bucket "$bucket_name" \
+        --region "$region" \
+        --create-bucket-configuration "LocationConstraint=$region" \
+        >/dev/null
+    fi
+    echo "✓ bucket created" >&2
+  fi
+
+  echo "→ configuring Block Public Access (allow bucket policies, deny ACLs)" >&2
+  aws s3api put-public-access-block \
+    --bucket "$bucket_name" \
+    --public-access-block-configuration \
+      "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=false,RestrictPublicBuckets=false" \
+    >/dev/null
+fi

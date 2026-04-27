@@ -164,3 +164,59 @@ def test_oidc_provider_skipped_when_present(fake_aws):
     creates = [c for c in fake_aws.calls if c[:2] == ["iam", "create-open-id-connect-provider"]]
     assert len(creates) == 0
     assert "OIDC provider already exists" in result.stderr or "reusing" in result.stderr
+
+
+def test_bucket_created_when_absent_us_east_1(fake_aws):
+    _stub_happy_path(fake_aws, bucket_status=404)
+    result = subprocess.run(
+        ["bash", str(SCRIPT), *VALID_ARGS],  # region = us-east-1
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    creates = [c for c in fake_aws.calls if c[:2] == ["s3api", "create-bucket"]]
+    assert len(creates) == 1
+    argv = " ".join(creates[0])
+    # us-east-1 omits LocationConstraint
+    assert "LocationConstraint" not in argv
+    assert "my-dora-bucket" in argv
+
+
+def test_bucket_created_when_absent_other_region(fake_aws):
+    _stub_happy_path(fake_aws, bucket_status=404)
+    args = [
+        "--repo", "owner/name",
+        "--region", "eu-west-1",
+        "--bucket", "my-dora-bucket",
+    ]
+    result = subprocess.run(["bash", str(SCRIPT), *args], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    creates = [c for c in fake_aws.calls if c[:2] == ["s3api", "create-bucket"]]
+    assert len(creates) == 1
+    argv = " ".join(creates[0])
+    assert "LocationConstraint" in argv
+    assert "eu-west-1" in argv
+
+
+def test_bucket_skipped_when_present(fake_aws):
+    _stub_happy_path(fake_aws, bucket_status=200)
+    result = subprocess.run(["bash", str(SCRIPT), *VALID_ARGS], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    creates = [c for c in fake_aws.calls if c[:2] == ["s3api", "create-bucket"]]
+    assert len(creates) == 0
+
+
+def test_bucket_skipped_with_existing_bucket_flag(fake_aws):
+    _stub_happy_path(fake_aws)
+    args = [
+        "--repo", "owner/name",
+        "--region", "us-east-1",
+        "--existing-bucket", "shared-ci",
+    ]
+    result = subprocess.run(["bash", str(SCRIPT), *args], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    head_calls = [c for c in fake_aws.calls if c[:2] == ["s3api", "head-bucket"]]
+    create_calls = [c for c in fake_aws.calls if c[:2] == ["s3api", "create-bucket"]]
+    bpa_calls = [c for c in fake_aws.calls if c[:2] == ["s3api", "put-public-access-block"]]
+    assert head_calls == []
+    assert create_calls == []
+    assert bpa_calls == []
