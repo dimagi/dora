@@ -500,3 +500,43 @@ def test_hotfixes_preceding_merges_drops_bots_when_exclude_bots_set(fixture_conn
     assert not any(r[1] == "#70" for r in ex_rows)
     # The hotfix PR itself still shows under "hotfix" relation.
     assert any(r[1] == "#6" and r[2] == "hotfix" for r in ex_rows)
+
+
+def test_summary_default_uses_per_component_defaults(fixture_conn):
+    """summary's prs and cfr count bots; median_lead_h does not."""
+    headers, rows = metrics.m_summary(fixture_conn, SINCE)
+    out = [_row_dict(headers, r) for r in rows]
+    api = next(r for r in out if r["repo"] == "acme/api")
+    # PR count INCLUDES bot (default for deploy-freq-prs is False).
+    assert api["prs"] == 7
+    # CFR INCLUDES bot in the denominator: 1/7 = 14.3%.
+    assert api["cfr"] == "14.3%"
+
+
+def test_summary_force_exclude_drops_bots_everywhere(fixture_conn):
+    headers, rows = metrics.m_summary(fixture_conn, SINCE, exclude_bots=True)
+    out = [_row_dict(headers, r) for r in rows]
+    api = next(r for r in out if r["repo"] == "acme/api")
+    # Bot dropped from prs count: 6.
+    assert api["prs"] == 6
+    # CFR denominator drops too: 1/6 = 16.7%.
+    assert api["cfr"] == "16.7%"
+
+
+def test_summary_force_include_changes_lead_time_vs_default(fixture_conn):
+    """When exclude_bots=False, lead-time also includes bots (overrides default).
+
+    Confirms summary's lead-time component honors the override: the bot's
+    short merge time should pull the median down vs. the default-mode.
+    """
+    headers_default, rows_default = metrics.m_summary(fixture_conn, SINCE)
+    out_default = [_row_dict(headers_default, r) for r in rows_default]
+    api_default = next(r for r in out_default if r["repo"] == "acme/api")
+
+    headers_force, rows_force = metrics.m_summary(fixture_conn, SINCE, exclude_bots=False)
+    out_force = [_row_dict(headers_force, r) for r in rows_force]
+    api_force = next(r for r in out_force if r["repo"] == "acme/api")
+
+    # Default mode excludes bots from lead-time; forced-include keeps it.
+    # The bot's 0.5h lead time will shift the median.
+    assert api_default["median_lead_h"] != api_force["median_lead_h"]

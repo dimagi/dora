@@ -176,8 +176,28 @@ def m_change_failure_prs(conn: sqlite3.Connection, since: str, exclude_bots: boo
     return [c[0] for c in cur.description], cur.fetchall()
 
 
-def m_summary(conn: sqlite3.Connection, since: str):
-    """Per-repo roll-up over the whole window."""
+def m_summary(conn: sqlite3.Connection, since: str,
+              exclude_bots: bool | None = None):
+    """Per-repo roll-up over the whole window.
+
+    exclude_bots:
+        None  → use each component's default from DEFAULT_EXCLUDE_BOTS
+                (prs / prs_per_week → include, median_lead_h → exclude,
+                 cfr → include).
+        True  → force-exclude bots from every component.
+        False → force-include bots in every component.
+    """
+    def policy_for(metric_name: str) -> bool:
+        # Direct subscript: a typo in metric_name fails loudly (KeyError)
+        # rather than silently defaulting to False via dict.get().
+        if exclude_bots is None:
+            return bool(DEFAULT_EXCLUDE_BOTS[metric_name])
+        return exclude_bots
+
+    bot_prs  = _author_filter(policy_for("deploy-freq-prs"))
+    bot_lead = _author_filter(policy_for("lead-time"))
+    bot_cfr  = _author_filter(policy_for("change-failure-rate"))
+
     repos = [
         r[0] for r in conn.execute(
             "SELECT DISTINCT repo FROM pull_requests "
@@ -188,10 +208,11 @@ def m_summary(conn: sqlite3.Connection, since: str):
     rows = []
     for repo in repos:
         n_prs, n_weeks = conn.execute(
-            """
+            f"""
             SELECT COUNT(*), COUNT(DISTINCT strftime('%Y-W%W', merged_at))
             FROM pull_requests
             WHERE repo = ? AND merged_at IS NOT NULL AND merged_at >= ?
+              {bot_prs}
             """,
             (repo, since),
         ).fetchone()
@@ -199,11 +220,12 @@ def m_summary(conn: sqlite3.Connection, since: str):
 
         hours = [
             r[0] for r in conn.execute(
-                """
+                f"""
                 SELECT (julianday(merged_at) - julianday(first_commit_at)) * 24.0
                 FROM pull_requests
                 WHERE repo = ? AND merged_at IS NOT NULL
                   AND first_commit_at IS NOT NULL AND merged_at >= ?
+                  {bot_lead}
                 """,
                 (repo, since),
             )
@@ -216,6 +238,7 @@ def m_summary(conn: sqlite3.Connection, since: str):
             SELECT COUNT(*), SUM(CASE WHEN {fail_expr} THEN 1 ELSE 0 END)
             FROM pull_requests
             WHERE repo = ? AND merged_at IS NOT NULL AND merged_at >= ?
+              {bot_cfr}
             """,
             (repo, since),
         ).fetchone()
