@@ -143,4 +143,19 @@ else
       }]
     }' \
     >/dev/null
+
+  echo "→ applying bucket policy: public read on dora-report.json only" >&2
+  bucket_policy="$(jq -nc \
+    --arg bucket "$bucket_name" \
+    '{
+      Version: "2012-10-17",
+      Statement: [{
+        Sid: "PublicReadDoraReport",
+        Effect: "Allow",
+        Principal: "*",
+        Action: "s3:GetObject",
+        Resource: "arn:aws:s3:::\($bucket)/dora-report.json"
+      }]
+    }')"
+  aws s3api put-bucket-policy --bucket "$bucket_name" --policy "$bucket_policy" >/dev/null
 fi

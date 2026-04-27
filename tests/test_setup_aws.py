@@ -242,3 +242,16 @@ def test_bucket_cors_skipped_with_existing_bucket(fake_aws):
     assert result.returncode == 0, result.stderr
     cors_calls = [c for c in fake_aws.calls if c[:2] == ["s3api", "put-bucket-cors"]]
     assert cors_calls == []
+
+
+def test_bucket_public_policy_applied(fake_aws):
+    _stub_happy_path(fake_aws, bucket_status=200)
+    result = subprocess.run(["bash", str(SCRIPT), *VALID_ARGS], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    policy_calls = [c for c in fake_aws.calls if c[:2] == ["s3api", "put-bucket-policy"]]
+    assert len(policy_calls) == 1
+    # The policy ARN must scope to dora-report.json only — never the whole bucket.
+    argv = " ".join(policy_calls[0])
+    assert "arn:aws:s3:::my-dora-bucket/dora-report.json" in argv
+    assert "arn:aws:s3:::my-dora-bucket/*" not in argv
+    assert "arn:aws:s3:::my-dora-bucket/dora.db" not in argv
