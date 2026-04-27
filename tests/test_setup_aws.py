@@ -220,3 +220,25 @@ def test_bucket_skipped_with_existing_bucket_flag(fake_aws):
     assert head_calls == []
     assert create_calls == []
     assert bpa_calls == []
+
+
+def test_bucket_cors_applied(fake_aws):
+    _stub_happy_path(fake_aws, bucket_status=200)
+    result = subprocess.run(["bash", str(SCRIPT), *VALID_ARGS], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    cors_calls = [c for c in fake_aws.calls if c[:2] == ["s3api", "put-bucket-cors"]]
+    assert len(cors_calls) == 1
+    argv = " ".join(cors_calls[0])
+    assert "my-dora-bucket" in argv
+    # Spot-check: the CORS JSON includes "GET" and "*"
+    assert "GET" in argv
+    assert "*" in argv
+
+
+def test_bucket_cors_skipped_with_existing_bucket(fake_aws):
+    _stub_happy_path(fake_aws)
+    args = ["--repo", "o/n", "--region", "us-east-1", "--existing-bucket", "shared"]
+    result = subprocess.run(["bash", str(SCRIPT), *args], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    cors_calls = [c for c in fake_aws.calls if c[:2] == ["s3api", "put-bucket-cors"]]
+    assert cors_calls == []

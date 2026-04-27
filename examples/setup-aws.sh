@@ -131,4 +131,16 @@ else
     --public-access-block-configuration \
       "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=false,RestrictPublicBuckets=false" \
     >/dev/null
+
+  echo "→ applying CORS config" >&2
+  aws s3api put-bucket-cors \
+    --bucket "$bucket_name" \
+    --cors-configuration '{
+      "CORSRules": [{
+        "AllowedOrigins": ["*"],
+        "AllowedMethods": ["GET"],
+        "AllowedHeaders": ["*"]
+      }]
+    }' \
+    >/dev/null
 fi
