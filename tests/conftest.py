@@ -53,8 +53,16 @@ def fake_aws(tmp_path, monkeypatch):
     aws_stub.write_text(
         f"""#!/usr/bin/env bash
 set -e
-# Record argv (TAB-separated, one line per call)
-printf '%s\\n' "$(printf '%s\\t' "$@")" >> "{log_file}"
+# Record argv: each arg is NUL-terminated; the call ends with an extra NUL
+# (so a call's bytes look like: arg1\\0arg2\\0...\\0argN\\0\\0). NUL is the
+# only byte guaranteed not to appear inside an argument, making this robust
+# against multiline JSON heredocs and tab-containing values.
+{{
+  for arg in "$@"; do
+    printf '%s\\0' "$arg"
+  done
+  printf '\\0'
+}} >> "{log_file}"
 
 key="$1__$2"
 resp_file="{responses_dir}/$key"
@@ -84,7 +92,16 @@ exit "$exit_code"
 
         @property
         def calls(self) -> list[list[str]]:
-            text = log_file.read_text()
-            return [line.rstrip("\t").split("\t") for line in text.splitlines() if line]
+            data = log_file.read_bytes()
+            # Each call is argN<NUL>...<NUL><NUL>; split on the inter-call NULNUL marker.
+            raw_calls = data.split(b"\0\0")
+            result = []
+            for raw in raw_calls:
+                if not raw:
+                    continue
+                args = [a.decode() for a in raw.split(b"\0") if a]
+                if args:
+                    result.append(args)
+            return result
 
     return FakeAws()
