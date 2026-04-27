@@ -119,6 +119,32 @@ Either way, you'll also need:
 
 Do not apply both to the same PR.
 
+## Bot filter
+
+Bot-authored PRs (login matches `*[bot]` — dependabot, renovate, github-actions, etc.) are filtered per metric by default. The defaults aim to keep bots in metrics where they represent real shipped work and exclude them where their volume or speed distorts the human signal.
+
+| Metric | Bots | Why |
+|---|---|---|
+| `deploy-freq-prs` | counted | bot PRs ship real changes |
+| `deploy-freq` | n/a | reads the deployments table — no `author` column |
+| `lead-time` | excluded | bot merges happen in seconds; distort distribution |
+| `change-failure-rate` | counted | a bot-shipped defect is still a defect |
+| `change-failure-prs` | counted | drill-down for CFR; matches |
+| `hotfixes` | counted | bots can ship hotfixes; list them if they do |
+| `hotfix-count` | counted | aggregate of `hotfixes`; matches |
+| `summary` | mixed | composite — each component uses its own default |
+| `review-latency` | excluded | auto-merged; not a human review wait |
+| `large-prs` | excluded | dependabot weekly mega-bumps dominate the L+ bucket |
+| `weekend-merges` | excluded | bot cron schedules aren't human patterns |
+
+Override the defaults globally:
+```bash
+dora report --exclude-bots   # filter bots from every metric
+dora report --include-bots   # keep bots in every metric (even where excluded by default)
+```
+
+The dashboard shows a `humans only` chip on each tile or panel whose data excludes bots, plus a banner at the top when a global override (either flag) is active.
+
 ## Deployment status quirks
 
 GitHub auto-marks a successful deployment as `inactive` when a newer deployment for the same environment succeeds — so most historically-successful deploys show up as `inactive`, not `success`. The report treats both as successful.
