@@ -298,6 +298,36 @@ def m_hotfix_count(conn: sqlite3.Connection, since: str):
     return [c[0] for c in cur.description], cur.fetchall()
 
 
+def m_weekend_merges(conn: sqlite3.Connection, since: str):
+    """Individual PRs merged on a Saturday or Sunday (UTC).
+
+    SQLite strftime('%w', t): 0=Sunday, 6=Saturday. Output one row per
+    PR so the dashboard can both count weekly totals and break down by
+    author. Day-of-week label ('Sat' / 'Sun') is included for display.
+    """
+    cur = conn.execute(
+        """
+        SELECT repo,
+               strftime('%Y-W%W', merged_at) AS week,
+               number AS pr,
+               author,
+               title,
+               substr(merged_at, 1, 10) AS merged,
+               CASE strftime('%w', merged_at)
+                    WHEN '0' THEN 'Sun'
+                    WHEN '6' THEN 'Sat'
+               END AS dow
+        FROM pull_requests
+        WHERE merged_at IS NOT NULL
+          AND merged_at >= ?
+          AND strftime('%w', merged_at) IN ('0', '6')
+        ORDER BY repo, merged_at DESC, number DESC
+        """,
+        (since,),
+    )
+    return [c[0] for c in cur.description], cur.fetchall()
+
+
 def m_hotfixes(conn: sqlite3.Connection, since: str):
     """Each hotfix PR plus its 3 preceding merges — investigative tool."""
     hotfixes = conn.execute(
@@ -362,6 +392,10 @@ METRICS = {
     "hotfix-count": (
         m_hotfix_count,
         "Weekly count of merged PRs labelled `hotfix`",
+    ),
+    "weekend-merges": (
+        m_weekend_merges,
+        "Individual PRs merged on a Saturday or Sunday (UTC)",
     ),
     "large-prs": (
         m_large_prs,
