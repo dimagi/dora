@@ -13,6 +13,7 @@ def test_run_report_returns_all_metrics_by_default(fixture_conn):
         "deploy-freq-prs", "deploy-freq", "lead-time",
         "change-failure-rate", "change-failure-prs", "hotfixes", "summary",
         "review-latency",
+        "large-prs", "hotfix-count", "weekend-merges",
     }
 
 

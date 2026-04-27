@@ -249,6 +249,85 @@ def m_review_latency(conn: sqlite3.Connection, since: str):
     return ["repo", "week", "bucket", "n_prs", "median_h", "p90_h"], rows
 
 
+def m_large_prs(conn: sqlite3.Connection, since: str):
+    """Weekly count of merged PRs with changed_files >= 10 (the L+ bucket).
+
+    Surfaces churn risk: large PRs are harder to review and more likely
+    to ship defects. PRs with NULL changed_files are excluded (legacy
+    rows from before the schema migration).
+    """
+    cur = conn.execute(
+        """
+        SELECT repo,
+               strftime('%Y-W%W', merged_at) AS week,
+               COUNT(*) AS large_prs
+        FROM pull_requests
+        WHERE merged_at     IS NOT NULL
+          AND merged_at     >= ?
+          AND changed_files IS NOT NULL
+          AND changed_files >= 10
+        GROUP BY repo, week
+        ORDER BY repo, week
+        """,
+        (since,),
+    )
+    return [c[0] for c in cur.description], cur.fetchall()
+
+
+def m_hotfix_count(conn: sqlite3.Connection, since: str):
+    """Weekly count of merged PRs labelled `hotfix`.
+
+    Aggregate of the same set m_hotfixes lists individually. Use the
+    per-PR drill-down in m_hotfixes to investigate; this rolls them up
+    for a KPI tile.
+    """
+    cur = conn.execute(
+        """
+        SELECT repo,
+               strftime('%Y-W%W', merged_at) AS week,
+               COUNT(*) AS hotfix_count
+        FROM pull_requests
+        WHERE labels LIKE '%hotfix%'
+          AND merged_at IS NOT NULL
+          AND merged_at >= ?
+        GROUP BY repo, week
+        ORDER BY repo, week
+        """,
+        (since,),
+    )
+    return [c[0] for c in cur.description], cur.fetchall()
+
+
+def m_weekend_merges(conn: sqlite3.Connection, since: str):
+    """Individual PRs merged on a Saturday or Sunday (UTC).
+
+    SQLite strftime('%w', t): 0=Sunday, 6=Saturday. Output one row per
+    PR so the dashboard can both count weekly totals and break down by
+    author. Day-of-week label ('Sat' / 'Sun') is included for display.
+    """
+    cur = conn.execute(
+        """
+        SELECT repo,
+               strftime('%Y-W%W', merged_at) AS week,
+               number AS pr,
+               author,
+               title,
+               substr(merged_at, 1, 10) AS merged,
+               CASE strftime('%w', merged_at)
+                    WHEN '0' THEN 'Sun'
+                    WHEN '6' THEN 'Sat'
+               END AS dow
+        FROM pull_requests
+        WHERE merged_at IS NOT NULL
+          AND merged_at >= ?
+          AND strftime('%w', merged_at) IN ('0', '6')
+        ORDER BY repo, merged_at DESC, number DESC
+        """,
+        (since,),
+    )
+    return [c[0] for c in cur.description], cur.fetchall()
+
+
 def m_hotfixes(conn: sqlite3.Connection, since: str):
     """Each hotfix PR plus its 3 preceding merges — investigative tool."""
     hotfixes = conn.execute(
@@ -309,6 +388,18 @@ METRICS = {
     "hotfixes": (
         m_hotfixes,
         "Recent hotfix PRs with their preceding merges (investigative)",
+    ),
+    "hotfix-count": (
+        m_hotfix_count,
+        "Weekly count of merged PRs labelled `hotfix`",
+    ),
+    "weekend-merges": (
+        m_weekend_merges,
+        "Individual PRs merged on a Saturday or Sunday (UTC)",
+    ),
+    "large-prs": (
+        m_large_prs,
+        "Weekly count of merged PRs with changed_files >= 10 (churn risk)",
     ),
     "summary": (
         m_summary,

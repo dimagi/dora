@@ -142,6 +142,20 @@ function cfrTier(pct) {
   return "low";
 }
 
+function largePrsTier(perWeek) {
+  if (perWeek == null) return "na";
+  if (perWeek < 2) return "elite";   // <2/wk: healthy churn
+  if (perWeek <= 4) return "medium"; // 2-4/wk: caution
+  return "low";                      // >4/wk: too many big PRs
+}
+
+function hotfixTier(perWeek) {
+  if (perWeek == null) return "na";
+  if (perWeek < 1) return "elite";   // 0/wk
+  if (perWeek <= 2) return "medium"; // 1-2/wk
+  return "low";                      // 3+/wk
+}
+
 const TIER_LABEL = { elite: "Elite", high: "High", medium: "Medium", low: "Low", na: "N/A" };
 
 function kpiCard({ label, value, unit, subText, tier, info }) {
@@ -212,27 +226,31 @@ function render() {
 function renderForRepo(metrics, repo) {
   resetCharts();
 
-  const freqPrs       = inRange(filterByRepo(metrics["deploy-freq-prs"]     || [], repo));
-  const freqDeploys   = inRange(filterByRepo(metrics["deploy-freq"]         || [], repo));
-  const leadTime      = inRange(filterByRepo(metrics["lead-time"]           || [], repo));
-  const cfr           = inRange(filterByRepo(metrics["change-failure-rate"] || [], repo));
-  const cfrPrs        = inRange(filterByRepo(metrics["change-failure-prs"]  || [], repo));
-  const hotfixes      = inRangeHotfixes(filterByRepo(metrics["hotfixes"]    || [], repo));
-  const reviewLatency = inRange(filterByRepo(metrics["review-latency"]      || [], repo));
+  const freqPrs        = inRange(filterByRepo(metrics["deploy-freq-prs"]     || [], repo));
+  const freqDeploys    = inRange(filterByRepo(metrics["deploy-freq"]         || [], repo));
+  const leadTime       = inRange(filterByRepo(metrics["lead-time"]           || [], repo));
+  const cfr            = inRange(filterByRepo(metrics["change-failure-rate"] || [], repo));
+  const cfrPrs         = inRange(filterByRepo(metrics["change-failure-prs"]  || [], repo));
+  const hotfixes       = inRangeHotfixes(filterByRepo(metrics["hotfixes"]    || [], repo));
+  const reviewLatency  = inRange(filterByRepo(metrics["review-latency"]      || [], repo));
+  const largePrs       = inRange(filterByRepo(metrics["large-prs"]           || [], repo));
+  const hotfixCount    = inRange(filterByRepo(metrics["hotfix-count"]        || [], repo));
+  const weekendMerges  = inRangeWeekendMerges(filterByRepo(metrics["weekend-merges"] || [], repo));
   // summary is not date-filterable; renderKPIs uses it only as a fallback,
   // and that fallback is dropped when filtering is active (see renderKPIs).
-  const summary       = filterByRepo(metrics["summary"] || [], repo);
+  const summary        = filterByRepo(metrics["summary"] || [], repo);
 
-  renderKPIs(summary, freqPrs, freqDeploys, leadTime, cfr);
+  renderKPIs(summary, freqPrs, freqDeploys, leadTime, cfr, largePrs, hotfixCount);
   renderFreqChart(freqPrs, freqDeploys);
   renderLeadChart(leadTime);
   renderCFRChart(cfr);
   renderCfrPrs(cfrPrs);
   renderHotfixes(hotfixes);
   renderReviewLatencyChart(reviewLatency);
+  renderWeekendMerges(weekendMerges);
 }
 
-function renderKPIs(summary, freqPrs, freqDeploys, leadTime, cfr) {
+function renderKPIs(summary, freqPrs, freqDeploys, leadTime, cfr, largePrs, hotfixCount) {
   const filtering = currentFrom !== null && currentTo !== null;
   const s = filtering ? null : summary[0];
 
@@ -267,6 +285,23 @@ function renderKPIs(summary, freqPrs, freqDeploys, leadTime, cfr) {
     totals.d > 0 ? (100 * totals.f) / totals.d
     : (s?.cfr != null ? parseFloat(String(s.cfr).replace("%", "")) : null);
 
+  // Large PRs / wk and Hotfixes / wk: average per week.
+  // Unfiltered → last 4 weeks; filtered → range avg.
+  // Empty + filtering → 0 (the metric only emits weeks with non-zero counts,
+  // so an empty filtered range legitimately means "none in this window").
+  // Empty + unfiltered → "—" (metric likely absent from the report entirely).
+  const lpRows = filtering ? (largePrs || []) : recentN(largePrs || [], 4);
+  const lpDenom = filtering ? Math.max(1, lpRows.length) : 4;
+  const largePerWk = (largePrs && largePrs.length)
+    ? lpRows.reduce((a, r) => a + (r.large_prs || 0), 0) / lpDenom
+    : (filtering ? 0 : null);
+
+  const hcRows = filtering ? (hotfixCount || []) : recentN(hotfixCount || [], 4);
+  const hcDenom = filtering ? Math.max(1, hcRows.length) : 4;
+  const hotfixPerWk = (hotfixCount && hotfixCount.length)
+    ? hcRows.reduce((a, r) => a + (r.hotfix_count || 0), 0) / hcDenom
+    : (filtering ? 0 : null);
+
   const subText     = filtering ? "in selected range"            : "last 4 weeks";
   const leadSubText = filtering ? "median, in selected range"    : "median, last 4 wk";
   const cfrSubText  = filtering ? "in selected range"            : "across window";
@@ -297,6 +332,22 @@ function renderKPIs(summary, freqPrs, freqDeploys, leadTime, cfr) {
       subText: cfrSubText,
       tier: cfrTier(cfrPct),
       info: "PRs labelled `caused-incident` ÷ all merged PRs across the window. Apply the label to the PR that SHIPPED the defect (not the PR that fixed it). See the drill-down list below the chart.",
+    }),
+    kpiCard({
+      label: "Large PRs / wk",
+      value: largePerWk != null ? largePerWk.toFixed(1) : "—",
+      unit: "",
+      subText,
+      tier: largePrsTier(largePerWk),
+      info: "Average per-week count of merged PRs with 10 or more changed files. Large PRs are slower to review and more failure-prone — a sustained rate above ~2/wk is a smell.",
+    }),
+    kpiCard({
+      label: "Hotfixes / wk",
+      value: hotfixPerWk != null ? hotfixPerWk.toFixed(1) : "—",
+      unit: "",
+      subText,
+      tier: hotfixTier(hotfixPerWk),
+      info: "Average per-week count of merged PRs labelled `hotfix`. The `hotfix` label marks the PR that FIXED a prior defect; consistently nonzero rates point to upstream quality issues.",
     }),
     kpiCard({
       label: "Mean time to restore",
@@ -524,6 +575,50 @@ function renderHotfixes(rows) {
   el.innerHTML = html;
 }
 
+function renderWeekendMerges(rows) {
+  const el = document.getElementById("weekend-merges");
+  if (!rows.length) {
+    el.innerHTML = '<div class="empty">No weekend merges in the current range</div>';
+    return;
+  }
+
+  // Per-author tally for the selected range.
+  const byAuthor = new Map();
+  for (const r of rows) {
+    const a = r.author || "(unknown)";
+    if (!byAuthor.has(a)) byAuthor.set(a, []);
+    byAuthor.get(a).push(r);
+  }
+  const authors = [...byAuthor.entries()].sort((a, b) => b[1].length - a[1].length);
+
+  const total = rows.length;
+  const noun  = total === 1 ? "merge" : "merges";
+  const summary =
+    `<div class="wk-summary">${total} weekend ${noun} · ${authors.length} author${authors.length === 1 ? "" : "s"}</div>`;
+
+  const list = authors.map(([author, prs]) => {
+    const prList = prs
+      .sort((a, b) => (a.merged < b.merged ? 1 : -1))
+      .map(p => `
+        <div class="wk-pr">
+          <span class="wk-tag wk-${escapeHtml((p.dow || "").toLowerCase())}">${escapeHtml(p.dow || "")}</span>
+          <a href="https://github.com/${escapeHtml(p.repo)}/pull/${encodeURIComponent(p.pr)}"
+             target="_blank" rel="noopener noreferrer">#${escapeHtml(p.pr)}</a>
+          <span>${escapeHtml(p.title || "")}</span>
+          <span class="wk-date">${escapeHtml(p.merged || "")}</span>
+        </div>
+      `).join("");
+    return `
+      <details class="wk-author">
+        <summary><span class="wk-author-name">${escapeHtml(author)}</span><span class="wk-author-count">${prs.length}</span></summary>
+        ${prList}
+      </details>
+    `;
+  }).join("");
+
+  el.innerHTML = summary + list;
+}
+
 // --------- date range helpers ---------
 
 /** Sorted unique week values across all metrics that have a `week` field. */
@@ -565,31 +660,51 @@ function weekToMondayDate(weekStr) {
   return target.toISOString().slice(0, 10);
 }
 
+/** Convert a Monday-of-week date string ("YYYY-MM-DD") to the date string for
+ *  that week's Sunday (i.e. Monday + 6 days), keeping everything in UTC. */
+function weekEndDate(mondayDate) {
+  const d = new Date(mondayDate + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + 6);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Resolve `[currentFrom, currentTo]` ISO weeks into a closed `[fromDate, toEnd]`
+ *  date span (Monday-of-from to Sunday-of-to). Returns null if no range is
+ *  active or the week strings can't be parsed. */
+function currentRangeDates() {
+  if (!currentFrom || !currentTo) return null;
+  const fromDate = weekToMondayDate(currentFrom);
+  const toDate   = weekToMondayDate(currentTo);
+  if (!fromDate || !toDate) return null;
+  return { fromDate, toEnd: weekEndDate(toDate) };
+}
+
 /** Filter hotfix rows: keep each `hotfix` row in range AND its trailing
  *  `preceded-by` rows (groups stay intact even if the prev row's date
  *  is technically outside the window). */
 function inRangeHotfixes(rows) {
-  if (!currentFrom || !currentTo) return rows;
-  const fromDate = weekToMondayDate(currentFrom);
-  const toDate   = weekToMondayDate(currentTo);
-  if (!fromDate || !toDate) return rows;
-  // Add 6 days to toDate to include the whole "to" week.
-  const toEnd = (() => {
-    const d = new Date(toDate + "T00:00:00Z");
-    d.setUTCDate(d.getUTCDate() + 6);
-    return d.toISOString().slice(0, 10);
-  })();
+  const span = currentRangeDates();
+  if (!span) return rows;
   const out = [];
   let keepGroup = false;
   for (const r of rows) {
     if (r.relation === "hotfix") {
-      keepGroup = r.merged >= fromDate && r.merged <= toEnd;
+      keepGroup = r.merged >= span.fromDate && r.merged <= span.toEnd;
       if (keepGroup) out.push(r);
     } else if (keepGroup) {
       out.push(r);
     }
   }
   return out;
+}
+
+/** Filter weekend-merges rows by the date covered by [currentFrom, currentTo].
+ *  Each row carries `merged` (YYYY-MM-DD); we keep rows whose `merged` falls
+ *  inside the Monday-of-from to Sunday-of-to span. */
+function inRangeWeekendMerges(rows) {
+  const span = currentRangeDates();
+  if (!span) return rows;
+  return rows.filter(r => r.merged && r.merged >= span.fromDate && r.merged <= span.toEnd);
 }
 
 /** Compute [from, to] for a preset clicked on the current data.

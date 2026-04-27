@@ -19,3 +19,6 @@ __pycache__/
 # Build outputs
 dist/
 build/
+
+# Local git worktrees (used by Claude Code)
+.worktrees/

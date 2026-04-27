@@ -105,6 +105,9 @@ Either way, you'll also need:
 | `change-failure-rate` | % of merged PRs labelled `caused-incident` | Requires label discipline |
 | `review-latency` | Median hours waiting for review (`merged − ready_for_review_at \| opened_at`), bucketed by `changed_files` (XS=1, S=2-3, M=4-9, L+=10+) | Chart shows median; JSON output also includes p90 |
 | `hotfixes` | Recent `hotfix`-labelled PRs + their 3 preceding merges | Investigative — helps find causing PRs to backfill `caused-incident` |
+| `large-prs` | Weekly count of merged PRs with `changed_files >= 10` | Same NULL coverage caveat as `review-latency` (legacy rows excluded) |
+| `hotfix-count` | Weekly count of `hotfix`-labelled PRs | Aggregate of the same set `hotfixes` lists individually |
+| `weekend-merges` | Individual PRs merged on Sat/Sun (UTC) | Per-PR drill-down with author + day-of-week |
 | `summary` | Per-repo roll-up over the window | Used by the dashboard's summary tiles |
 
 > **`review-latency` coverage ramps forward.** When you upgrade `dora` and run the next `dora pull`, only newly-merged PRs get their size + draft data fetched. Previously-cached PRs keep their `changed_files` and `ready_for_review_at` columns `NULL` and are excluded from the metric. Coverage fills in over time as new PRs merge. A `--rebuild` flag for forced backfill is parked as future work.

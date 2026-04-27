@@ -160,6 +160,61 @@ def test_metrics_registry_has_review_latency():
     assert "review-latency" in metrics.METRICS
 
 
+def test_large_prs_counts_changed_files_gte_10(fixture_conn):
+    """Weekly count of merged PRs with changed_files >= 10."""
+    headers, rows = metrics.m_large_prs(fixture_conn, SINCE)
+    out = [_row_dict(headers, r) for r in rows]
+    # Only PR 5 (acme/api, W42, changed_files=25) qualifies in the fixture.
+    assert {"repo": "acme/api", "week": "2025-W42", "large_prs": 1} in out
+    # No other repo/week should appear.
+    assert len(out) == 1
+
+
+def test_large_prs_excludes_null_changed_files(fixture_conn):
+    """PR 7 has changed_files=NULL — must be excluded."""
+    headers, rows = metrics.m_large_prs(fixture_conn, SINCE)
+    out = [_row_dict(headers, r) for r in rows]
+    assert not any(r["repo"] == "acme/api" and r["week"] == "2025-W43" for r in out)
+
+
+def test_large_prs_headers(fixture_conn):
+    headers, _ = metrics.m_large_prs(fixture_conn, SINCE)
+    assert headers == ["repo", "week", "large_prs"]
+
+
+def test_hotfix_count_aggregates_hotfix_label(fixture_conn):
+    """Weekly count of merged PRs labelled `hotfix` (same source as m_hotfixes)."""
+    headers, rows = metrics.m_hotfix_count(fixture_conn, SINCE)
+    out = [_row_dict(headers, r) for r in rows]
+    # PR 6 (acme/web, hotfix, merged 2025-10-22 → W42) is the only hotfix.
+    assert {"repo": "acme/web", "week": "2025-W42", "hotfix_count": 1} in out
+    assert len(out) == 1
+
+
+def test_hotfix_count_excludes_unmerged(fixture_conn):
+    """A hotfix-labelled but unmerged PR must not be counted."""
+    fixture_conn.execute(
+        """
+        INSERT INTO pull_requests
+          (repo, number, title, author, base, opened_at, merged_at,
+           first_commit_at, merge_sha, labels,
+           additions, deletions, changed_files, ready_for_review_at)
+        VALUES
+          ('acme/api', 99, 'Open hotfix', 'eve', 'main',
+           '2025-10-15T00:00:00Z', NULL, NULL, NULL, 'hotfix',
+           NULL, NULL, NULL, NULL)
+        """
+    )
+    headers, rows = metrics.m_hotfix_count(fixture_conn, SINCE)
+    out = [_row_dict(headers, r) for r in rows]
+    assert not any(r["repo"] == "acme/api" for r in out)
+
+
+def test_hotfix_count_headers(fixture_conn):
+    headers, _ = metrics.m_hotfix_count(fixture_conn, SINCE)
+    assert headers == ["repo", "week", "hotfix_count"]
+
+
 def test_metrics_registry_has_all():
     assert set(metrics.METRICS) == {
         "deploy-freq-prs",
@@ -170,4 +225,78 @@ def test_metrics_registry_has_all():
         "hotfixes",
         "summary",
         "review-latency",
+        "large-prs",
+        "hotfix-count",
+        "weekend-merges",
     }
+
+
+def _insert_pr(conn, **kw):
+    """Helper: insert a single PR row using the seed schema column order."""
+    cols = ["repo", "number", "title", "author", "base",
+            "opened_at", "merged_at", "first_commit_at", "merge_sha",
+            "labels", "additions", "deletions", "changed_files",
+            "ready_for_review_at"]
+    placeholders = ",".join("?" * len(cols))
+    conn.execute(
+        f"INSERT INTO pull_requests ({','.join(cols)}) VALUES ({placeholders})",
+        tuple(kw.get(c) for c in cols),
+    )
+
+
+def test_weekend_merges_keeps_sat_sun_only(fixture_conn):
+    """Only PRs whose merged_at falls on Sat (strftime %w='6') or Sun ('0')."""
+    # 2025-10-18 is a Saturday, 2025-10-19 is a Sunday, 2025-10-20 is a Monday.
+    _insert_pr(fixture_conn, repo="acme/api", number=20, title="sat merge",
+               author="eve", base="main",
+               opened_at="2025-10-17T00:00:00Z",
+               merged_at="2025-10-18T12:00:00Z",
+               first_commit_at="2025-10-17T00:00:00Z",
+               merge_sha="shaSat", labels="",
+               additions=10, deletions=2, changed_files=2,
+               ready_for_review_at=None)
+    _insert_pr(fixture_conn, repo="acme/api", number=21, title="sun merge",
+               author="frank", base="main",
+               opened_at="2025-10-18T00:00:00Z",
+               merged_at="2025-10-19T18:00:00Z",
+               first_commit_at="2025-10-18T00:00:00Z",
+               merge_sha="shaSun", labels="",
+               additions=5, deletions=1, changed_files=1,
+               ready_for_review_at=None)
+    _insert_pr(fixture_conn, repo="acme/api", number=22, title="mon merge",
+               author="eve", base="main",
+               opened_at="2025-10-19T00:00:00Z",
+               merged_at="2025-10-20T09:00:00Z",
+               first_commit_at="2025-10-19T00:00:00Z",
+               merge_sha="shaMon", labels="",
+               additions=5, deletions=1, changed_files=1,
+               ready_for_review_at=None)
+
+    headers, rows = metrics.m_weekend_merges(fixture_conn, SINCE)
+    out = [_row_dict(headers, r) for r in rows]
+    prs = sorted(r["pr"] for r in out)
+    assert prs == [20, 21]                             # Mon excluded
+    by_pr = {r["pr"]: r for r in out}
+    assert by_pr[20]["dow"] == "Sat"
+    assert by_pr[21]["dow"] == "Sun"
+    assert by_pr[20]["author"] == "eve"
+    assert by_pr[21]["author"] == "frank"
+    assert by_pr[20]["merged"] == "2025-10-18"
+    assert by_pr[20]["week"]   == "2025-W41"           # Sat falls in W41
+    assert by_pr[21]["week"]   == "2025-W41"
+
+
+def test_weekend_merges_excludes_unmerged(fixture_conn):
+    _insert_pr(fixture_conn, repo="acme/api", number=30, title="open weekend",
+               author="eve", base="main",
+               opened_at="2025-10-17T00:00:00Z",
+               merged_at=None, first_commit_at=None, merge_sha=None,
+               labels="", additions=None, deletions=None,
+               changed_files=None, ready_for_review_at=None)
+    _, rows = metrics.m_weekend_merges(fixture_conn, SINCE)
+    assert not any(r[2] == 30 for r in rows)           # column 2 = pr (number)
+
+
+def test_weekend_merges_headers(fixture_conn):
+    headers, _ = metrics.m_weekend_merges(fixture_conn, SINCE)
+    assert headers == ["repo", "week", "pr", "author", "title", "merged", "dow"]
