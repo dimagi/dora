@@ -46,3 +46,16 @@ while [[ $# -gt 0 ]]; do
     *) echo "error: unknown flag: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
+
+# --- Validation ------------------------------------------------------------
+
+die() { echo "error: $*" >&2; exit 2; }
+
+[[ -n "$repo"   ]] || die "--repo is required"
+[[ -n "$region" ]] || die "--region is required"
+
+if [[ -n "$bucket" && -n "$existing_bucket" ]] || [[ -z "$bucket" && -z "$existing_bucket" ]]; then
+  die "exactly one of --bucket / --existing-bucket is required"
+fi
+
+[[ "$repo" =~ ^[^/]+/[^/]+$ ]] || die "--repo must be OWNER/NAME (got: $repo)"
