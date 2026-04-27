@@ -142,6 +142,20 @@ function cfrTier(pct) {
   return "low";
 }
 
+function largePrsTier(perWeek) {
+  if (perWeek == null) return "na";
+  if (perWeek < 2) return "elite";   // <2/wk: healthy churn
+  if (perWeek <= 4) return "medium"; // 2-4/wk: caution
+  return "low";                      // >4/wk: too many big PRs
+}
+
+function hotfixTier(perWeek) {
+  if (perWeek == null) return "na";
+  if (perWeek < 1) return "elite";   // 0/wk
+  if (perWeek <= 2) return "medium"; // 1-2/wk
+  return "low";                      // 3+/wk
+}
+
 const TIER_LABEL = { elite: "Elite", high: "High", medium: "Medium", low: "Low", na: "N/A" };
 
 function kpiCard({ label, value, unit, subText, tier, info }) {
@@ -212,18 +226,20 @@ function render() {
 function renderForRepo(metrics, repo) {
   resetCharts();
 
-  const freqPrs       = inRange(filterByRepo(metrics["deploy-freq-prs"]     || [], repo));
-  const freqDeploys   = inRange(filterByRepo(metrics["deploy-freq"]         || [], repo));
-  const leadTime      = inRange(filterByRepo(metrics["lead-time"]           || [], repo));
-  const cfr           = inRange(filterByRepo(metrics["change-failure-rate"] || [], repo));
-  const cfrPrs        = inRange(filterByRepo(metrics["change-failure-prs"]  || [], repo));
-  const hotfixes      = inRangeHotfixes(filterByRepo(metrics["hotfixes"]    || [], repo));
-  const reviewLatency = inRange(filterByRepo(metrics["review-latency"]      || [], repo));
+  const freqPrs        = inRange(filterByRepo(metrics["deploy-freq-prs"]     || [], repo));
+  const freqDeploys    = inRange(filterByRepo(metrics["deploy-freq"]         || [], repo));
+  const leadTime       = inRange(filterByRepo(metrics["lead-time"]           || [], repo));
+  const cfr            = inRange(filterByRepo(metrics["change-failure-rate"] || [], repo));
+  const cfrPrs         = inRange(filterByRepo(metrics["change-failure-prs"]  || [], repo));
+  const hotfixes       = inRangeHotfixes(filterByRepo(metrics["hotfixes"]    || [], repo));
+  const reviewLatency  = inRange(filterByRepo(metrics["review-latency"]      || [], repo));
+  const largePrs       = inRange(filterByRepo(metrics["large-prs"]           || [], repo));
+  const hotfixCount    = inRange(filterByRepo(metrics["hotfix-count"]        || [], repo));
   // summary is not date-filterable; renderKPIs uses it only as a fallback,
   // and that fallback is dropped when filtering is active (see renderKPIs).
-  const summary       = filterByRepo(metrics["summary"] || [], repo);
+  const summary        = filterByRepo(metrics["summary"] || [], repo);
 
-  renderKPIs(summary, freqPrs, freqDeploys, leadTime, cfr);
+  renderKPIs(summary, freqPrs, freqDeploys, leadTime, cfr, largePrs, hotfixCount);
   renderFreqChart(freqPrs, freqDeploys);
   renderLeadChart(leadTime);
   renderCFRChart(cfr);
@@ -232,7 +248,7 @@ function renderForRepo(metrics, repo) {
   renderReviewLatencyChart(reviewLatency);
 }
 
-function renderKPIs(summary, freqPrs, freqDeploys, leadTime, cfr) {
+function renderKPIs(summary, freqPrs, freqDeploys, leadTime, cfr, largePrs, hotfixCount) {
   const filtering = currentFrom !== null && currentTo !== null;
   const s = filtering ? null : summary[0];
 
@@ -267,6 +283,23 @@ function renderKPIs(summary, freqPrs, freqDeploys, leadTime, cfr) {
     totals.d > 0 ? (100 * totals.f) / totals.d
     : (s?.cfr != null ? parseFloat(String(s.cfr).replace("%", "")) : null);
 
+  // Large PRs / wk and Hotfixes / wk: average per week.
+  // Unfiltered → last 4 weeks; filtered → range avg.
+  // Empty + filtering → 0 (the metric only emits weeks with non-zero counts,
+  // so an empty filtered range legitimately means "none in this window").
+  // Empty + unfiltered → "—" (metric likely absent from the report entirely).
+  const lpRows = filtering ? (largePrs || []) : recentN(largePrs || [], 4);
+  const lpDenom = filtering ? Math.max(1, lpRows.length) : 4;
+  const largePerWk = (largePrs && largePrs.length)
+    ? lpRows.reduce((a, r) => a + (r.large_prs || 0), 0) / lpDenom
+    : (filtering ? 0 : null);
+
+  const hcRows = filtering ? (hotfixCount || []) : recentN(hotfixCount || [], 4);
+  const hcDenom = filtering ? Math.max(1, hcRows.length) : 4;
+  const hotfixPerWk = (hotfixCount && hotfixCount.length)
+    ? hcRows.reduce((a, r) => a + (r.hotfix_count || 0), 0) / hcDenom
+    : (filtering ? 0 : null);
+
   const subText     = filtering ? "in selected range"            : "last 4 weeks";
   const leadSubText = filtering ? "median, in selected range"    : "median, last 4 wk";
   const cfrSubText  = filtering ? "in selected range"            : "across window";
@@ -297,6 +330,22 @@ function renderKPIs(summary, freqPrs, freqDeploys, leadTime, cfr) {
       subText: cfrSubText,
       tier: cfrTier(cfrPct),
       info: "PRs labelled `caused-incident` ÷ all merged PRs across the window. Apply the label to the PR that SHIPPED the defect (not the PR that fixed it). See the drill-down list below the chart.",
+    }),
+    kpiCard({
+      label: "Large PRs / wk",
+      value: largePerWk != null ? largePerWk.toFixed(1) : "—",
+      unit: "",
+      subText,
+      tier: largePrsTier(largePerWk),
+      info: "Average per-week count of merged PRs with 10 or more changed files. Large PRs are slower to review and more failure-prone — a sustained rate above ~2/wk is a smell.",
+    }),
+    kpiCard({
+      label: "Hotfixes / wk",
+      value: hotfixPerWk != null ? hotfixPerWk.toFixed(1) : "—",
+      unit: "",
+      subText,
+      tier: hotfixTier(hotfixPerWk),
+      info: "Average per-week count of merged PRs labelled `hotfix`. The `hotfix` label marks the PR that FIXED a prior defect; consistently nonzero rates point to upstream quality issues.",
     }),
     kpiCard({
       label: "Mean time to restore",
