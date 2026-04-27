@@ -160,6 +160,28 @@ def test_metrics_registry_has_review_latency():
     assert "review-latency" in metrics.METRICS
 
 
+def test_large_prs_counts_changed_files_gte_10(fixture_conn):
+    """Weekly count of merged PRs with changed_files >= 10."""
+    headers, rows = metrics.m_large_prs(fixture_conn, SINCE)
+    out = [_row_dict(headers, r) for r in rows]
+    # Only PR 5 (acme/api, W42, changed_files=25) qualifies in the fixture.
+    assert {"repo": "acme/api", "week": "2025-W42", "large_prs": 1} in out
+    # No other repo/week should appear.
+    assert len(out) == 1
+
+
+def test_large_prs_excludes_null_changed_files(fixture_conn):
+    """PR 7 has changed_files=NULL — must be excluded."""
+    headers, rows = metrics.m_large_prs(fixture_conn, SINCE)
+    out = [_row_dict(headers, r) for r in rows]
+    assert not any(r["repo"] == "acme/api" and r["week"] == "2025-W43" for r in out)
+
+
+def test_large_prs_headers(fixture_conn):
+    headers, _ = metrics.m_large_prs(fixture_conn, SINCE)
+    assert headers == ["repo", "week", "large_prs"]
+
+
 def test_metrics_registry_has_all():
     assert set(metrics.METRICS) == {
         "deploy-freq-prs",
@@ -170,4 +192,5 @@ def test_metrics_registry_has_all():
         "hotfixes",
         "summary",
         "review-latency",
+        "large-prs",
     }

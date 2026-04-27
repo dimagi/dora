@@ -249,6 +249,31 @@ def m_review_latency(conn: sqlite3.Connection, since: str):
     return ["repo", "week", "bucket", "n_prs", "median_h", "p90_h"], rows
 
 
+def m_large_prs(conn: sqlite3.Connection, since: str):
+    """Weekly count of merged PRs with changed_files >= 10 (the L+ bucket).
+
+    Surfaces churn risk: large PRs are harder to review and more likely
+    to ship defects. PRs with NULL changed_files are excluded (legacy
+    rows from before the schema migration).
+    """
+    cur = conn.execute(
+        """
+        SELECT repo,
+               strftime('%Y-W%W', merged_at) AS week,
+               COUNT(*) AS large_prs
+        FROM pull_requests
+        WHERE merged_at     IS NOT NULL
+          AND merged_at     >= ?
+          AND changed_files IS NOT NULL
+          AND changed_files >= 10
+        GROUP BY repo, week
+        ORDER BY repo, week
+        """,
+        (since,),
+    )
+    return [c[0] for c in cur.description], cur.fetchall()
+
+
 def m_hotfixes(conn: sqlite3.Connection, since: str):
     """Each hotfix PR plus its 3 preceding merges — investigative tool."""
     hotfixes = conn.execute(
@@ -309,6 +334,10 @@ METRICS = {
     "hotfixes": (
         m_hotfixes,
         "Recent hotfix PRs with their preceding merges (investigative)",
+    ),
+    "large-prs": (
+        m_large_prs,
+        "Weekly count of merged PRs with changed_files >= 10 (churn risk)",
     ),
     "summary": (
         m_summary,
