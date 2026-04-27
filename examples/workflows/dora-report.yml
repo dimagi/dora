@@ -63,7 +63,13 @@ jobs:
 # no JSON in git history), use GitHub OIDC to get short-lived AWS credentials
 # — no long-lived secrets to rotate.
 #
-# AWS one-time setup:
+# AWS one-time setup: run examples/setup-aws.sh — see README "S3 variant"
+# for details. The script provisions: IAM OIDC provider, S3 bucket (+ CORS
+# and a public-read bucket policy on dora-report.json), and an IAM role
+# scoped to your repo.
+#
+# Reference only — examples/setup-aws.sh does this for you:
+#
 #   1. IAM → Identity providers → Add provider:
 #        Type: OpenID Connect
 #        URL:  https://token.actions.githubusercontent.com
@@ -86,7 +92,8 @@ jobs:
 #            }
 #          }]
 #        }
-#   3. Attach a policy granting GetObject + PutObject on your bucket prefix.
+#   3. Attach a policy granting GetObject + PutObject on dora.db and
+#      dora-report.json under your bucket.
 #
 # Workflow changes — replace "Cache dora.db" and "Commit report" with:
 #
@@ -111,7 +118,7 @@ jobs:
 #         run: |
 #           uv tool install "git+https://github.com/dimagi/dora[s3]"
 #           dora upload dora-report.json \
-#             --target s3://my-bucket/dora-report.json --public-read
+#             --target s3://my-bucket/dora-report.json
 #           aws s3 cp dora.db s3://my-bucket/dora.db   # keep DB private
 #
 # S3 bucket CORS (so the dashboard can fetch dora-report.json):
