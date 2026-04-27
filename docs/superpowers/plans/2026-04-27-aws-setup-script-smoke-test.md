@@ -38,7 +38,7 @@ Verify in the AWS console:
 Run the same command again. Expected:
 - Script exits 0.
 - Stderr: "OIDC provider already exists, reusing", "bucket already exists,
-  reusing", "role exists; updating existing role's trust policy".
+  reusing", "updating existing role's trust policy".
 
 ## 3. Branch restriction update
 

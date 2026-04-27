@@ -17,7 +17,8 @@ Required:
 
 Options:
   --branch NAME               Restrict trust policy to refs/heads/NAME (recommended: main).
-                              Default: any ref.
+                              Default: any ref. Re-run with a different --branch
+                              to update the trust policy on an existing role.
   --role-name NAME            IAM role name. Default: dora-report-uploader.
   -h, --help                  Show this help.
 
@@ -84,17 +85,20 @@ existing_oidc="$(
 
 if [[ -n "$existing_oidc" ]]; then
   echo "✓ OIDC provider already exists, reusing: $existing_oidc" >&2
-  oidc_provider_arn="$existing_oidc"
 else
   echo "→ creating OIDC provider" >&2
-  oidc_provider_arn="$(
+  created_arn="$(
     aws iam create-open-id-connect-provider \
       --url "$oidc_url" \
       --client-id-list "sts.amazonaws.com" \
       | jq -r '.OpenIDConnectProviderArn'
   )"
-  echo "✓ OIDC provider created: $oidc_provider_arn" >&2
+  echo "✓ OIDC provider created: $created_arn" >&2
 fi
+# The trust policy below references the OIDC provider via its deterministic
+# ARN format (arn:aws:iam::ACCT:oidc-provider/...), not the value above —
+# both branches converge on the same ARN, but the trust policy is built from
+# account_id directly so it stays correct on re-runs.
 
 # --- 2. S3 bucket ----------------------------------------------------------
 
@@ -132,6 +136,8 @@ else
       "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=false,RestrictPublicBuckets=false" \
     >/dev/null
 
+# --- 3. Bucket CORS --------------------------------------------------------
+
   echo "→ applying CORS config" >&2
   aws s3api put-bucket-cors \
     --bucket "$bucket_name" \
@@ -143,6 +149,8 @@ else
       }]
     }' \
     >/dev/null
+
+# --- 4. Bucket policy: public read on dora-report.json only ---------------
 
   echo "→ applying bucket policy: public read on dora-report.json only" >&2
   bucket_policy="$(jq -nc \
