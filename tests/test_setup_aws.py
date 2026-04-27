@@ -255,3 +255,48 @@ def test_bucket_public_policy_applied(fake_aws):
     assert "arn:aws:s3:::my-dora-bucket/dora-report.json" in argv
     assert "arn:aws:s3:::my-dora-bucket/*" not in argv
     assert "arn:aws:s3:::my-dora-bucket/dora.db" not in argv
+
+
+def test_role_created_when_absent_no_branch(fake_aws):
+    _stub_happy_path(fake_aws, role_present=False)
+    result = subprocess.run(["bash", str(SCRIPT), *VALID_ARGS], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    create_calls = [c for c in fake_aws.calls if c[:2] == ["iam", "create-role"]]
+    update_calls = [c for c in fake_aws.calls if c[:2] == ["iam", "update-assume-role-policy"]]
+    assert len(create_calls) == 1
+    assert len(update_calls) == 0
+    argv = " ".join(create_calls[0])
+    # No --branch given → sub matches any ref
+    assert "repo:owner/name:*" in argv
+    # OIDC provider ARN is referenced
+    assert "oidc-provider/token.actions.githubusercontent.com" in argv
+    # Account id from preflight is interpolated
+    assert "123456789012" in argv
+
+
+def test_role_created_with_branch_restriction(fake_aws):
+    _stub_happy_path(fake_aws, role_present=False)
+    args = [*VALID_ARGS, "--branch", "main"]
+    result = subprocess.run(["bash", str(SCRIPT), *args], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    create_calls = [c for c in fake_aws.calls if c[:2] == ["iam", "create-role"]]
+    argv = " ".join(create_calls[0])
+    assert "repo:owner/name:ref:refs/heads/main" in argv
+
+
+def test_role_updates_trust_policy_when_present(fake_aws):
+    _stub_happy_path(fake_aws, role_present=True)
+    result = subprocess.run(["bash", str(SCRIPT), *VALID_ARGS], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    create_calls = [c for c in fake_aws.calls if c[:2] == ["iam", "create-role"]]
+    update_calls = [c for c in fake_aws.calls if c[:2] == ["iam", "update-assume-role-policy"]]
+    assert len(create_calls) == 0
+    assert len(update_calls) == 1
+    assert "updating existing role" in result.stderr.lower()
+
+
+def test_no_branch_emits_recommendation(fake_aws):
+    _stub_happy_path(fake_aws, role_present=False)
+    result = subprocess.run(["bash", str(SCRIPT), *VALID_ARGS], capture_output=True, text=True)
+    assert result.returncode == 0
+    assert "--branch main" in result.stderr  # recommendation note

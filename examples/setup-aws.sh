@@ -159,3 +159,46 @@ else
     }')"
   aws s3api put-bucket-policy --bucket "$bucket_name" --policy "$bucket_policy" >/dev/null
 fi
+
+# --- 5. IAM role + trust policy --------------------------------------------
+
+if [[ -n "$branch" ]]; then
+  sub_pattern="repo:$repo:ref:refs/heads/$branch"
+else
+  sub_pattern="repo:$repo:*"
+  echo "  note: no --branch given; trust matches any ref. Recommend --branch main for production." >&2
+fi
+
+trust_policy="$(jq -nc \
+  --arg acct "$account_id" \
+  --arg sub "$sub_pattern" \
+  '{
+    Version: "2012-10-17",
+    Statement: [{
+      Effect: "Allow",
+      Principal: { Federated: "arn:aws:iam::\($acct):oidc-provider/token.actions.githubusercontent.com" },
+      Action: "sts:AssumeRoleWithWebIdentity",
+      Condition: {
+        StringEquals: { "token.actions.githubusercontent.com:aud": "sts.amazonaws.com" },
+        StringLike:   { "token.actions.githubusercontent.com:sub": $sub }
+      }
+    }]
+  }')"
+
+echo "→ checking IAM role: $role_name" >&2
+if aws iam get-role --role-name "$role_name" >/dev/null 2>&1; then
+  echo "→ updating existing role's trust policy" >&2
+  aws iam update-assume-role-policy \
+    --role-name "$role_name" \
+    --policy-document "$trust_policy" \
+    >/dev/null
+else
+  echo "→ creating role" >&2
+  aws iam create-role \
+    --role-name "$role_name" \
+    --assume-role-policy-document "$trust_policy" \
+    --description "Used by GitHub Actions to upload dora reports for $repo" \
+    >/dev/null
+fi
+role_arn="arn:aws:iam::${account_id}:role/${role_name}"
+echo "✓ role ready: $role_arn" >&2
