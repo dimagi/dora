@@ -822,6 +822,45 @@
       ]
     },
     {
+      "metric": "large-prs",
+      "description": "Weekly count of merged PRs with changed_files >= 10 (churn risk)",
+      "data": [
+        { "repo": "acme/example", "week": "2025-W43", "large_prs": 1 },
+        { "repo": "acme/example", "week": "2025-W44", "large_prs": 2 },
+        { "repo": "acme/example", "week": "2025-W45", "large_prs": 1 },
+        { "repo": "acme/example", "week": "2025-W46", "large_prs": 2 },
+        { "repo": "acme/example", "week": "2025-W47", "large_prs": 1 },
+        { "repo": "acme/example", "week": "2025-W48", "large_prs": 2 },
+        { "repo": "acme/example", "week": "2025-W49", "large_prs": 1 },
+        { "repo": "acme/example", "week": "2025-W50", "large_prs": 2 },
+        { "repo": "acme/example", "week": "2026-W01", "large_prs": 1 },
+        { "repo": "acme/example", "week": "2026-W02", "large_prs": 2 },
+        { "repo": "acme/example", "week": "2026-W03", "large_prs": 1 },
+        { "repo": "acme/example", "week": "2026-W04", "large_prs": 3 }
+      ]
+    },
+    {
+      "metric": "hotfix-count",
+      "description": "Weekly count of merged PRs labelled `hotfix`",
+      "data": [
+        { "repo": "acme/example", "week": "2025-W44", "hotfix_count": 2 },
+        { "repo": "acme/example", "week": "2025-W46", "hotfix_count": 1 },
+        { "repo": "acme/example", "week": "2026-W02", "hotfix_count": 1 }
+      ]
+    },
+    {
+      "metric": "weekend-merges",
+      "description": "Individual PRs merged on a Saturday or Sunday (UTC)",
+      "data": [
+        { "repo": "acme/example", "week": "2025-W43", "pr": 2510, "author": "alice",   "title": "Cache busting for static assets",        "merged": "2025-10-25", "dow": "Sat" },
+        { "repo": "acme/example", "week": "2025-W43", "pr": 2511, "author": "bob",     "title": "Fix flaky integration test",             "merged": "2025-10-26", "dow": "Sun" },
+        { "repo": "acme/example", "week": "2025-W45", "pr": 2547, "author": "alice",   "title": "Bump pinned deps to address advisory",   "merged": "2025-11-08", "dow": "Sat" },
+        { "repo": "acme/example", "week": "2025-W46", "pr": 2569, "author": "snopoke", "title": "Hotfix: revert deploy that broke login", "merged": "2025-11-15", "dow": "Sat" },
+        { "repo": "acme/example", "week": "2026-W01", "pr": 2710, "author": "alice",   "title": "Tidy migration ordering",                "merged": "2026-01-04", "dow": "Sun" },
+        { "repo": "acme/example", "week": "2026-W02", "pr": 2741, "author": "carol",   "title": "Fix S3 upload retry storm",              "merged": "2026-01-11", "dow": "Sun" }
+      ]
+    },
+    {
       "metric": "review-latency",
       "description": "Weekly review latency in hours (merged − ready_for_review_at | opened_at), bucketed by changed_files (XS=1, S=2-3, M=4-9, L+=10+)",
       "data": [
