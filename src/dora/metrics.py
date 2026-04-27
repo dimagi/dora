@@ -274,6 +274,30 @@ def m_large_prs(conn: sqlite3.Connection, since: str):
     return [c[0] for c in cur.description], cur.fetchall()
 
 
+def m_hotfix_count(conn: sqlite3.Connection, since: str):
+    """Weekly count of merged PRs labelled `hotfix`.
+
+    Aggregate of the same set m_hotfixes lists individually. Use the
+    per-PR drill-down in m_hotfixes to investigate; this rolls them up
+    for a KPI tile.
+    """
+    cur = conn.execute(
+        """
+        SELECT repo,
+               strftime('%Y-W%W', merged_at) AS week,
+               COUNT(*) AS hotfix_count
+        FROM pull_requests
+        WHERE labels LIKE '%hotfix%'
+          AND merged_at IS NOT NULL
+          AND merged_at >= ?
+        GROUP BY repo, week
+        ORDER BY repo, week
+        """,
+        (since,),
+    )
+    return [c[0] for c in cur.description], cur.fetchall()
+
+
 def m_hotfixes(conn: sqlite3.Connection, since: str):
     """Each hotfix PR plus its 3 preceding merges — investigative tool."""
     hotfixes = conn.execute(
@@ -334,6 +358,10 @@ METRICS = {
     "hotfixes": (
         m_hotfixes,
         "Recent hotfix PRs with their preceding merges (investigative)",
+    ),
+    "hotfix-count": (
+        m_hotfix_count,
+        "Weekly count of merged PRs labelled `hotfix`",
     ),
     "large-prs": (
         m_large_prs,

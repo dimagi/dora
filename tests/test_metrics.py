@@ -182,6 +182,39 @@ def test_large_prs_headers(fixture_conn):
     assert headers == ["repo", "week", "large_prs"]
 
 
+def test_hotfix_count_aggregates_hotfix_label(fixture_conn):
+    """Weekly count of merged PRs labelled `hotfix` (same source as m_hotfixes)."""
+    headers, rows = metrics.m_hotfix_count(fixture_conn, SINCE)
+    out = [_row_dict(headers, r) for r in rows]
+    # PR 6 (acme/web, hotfix, merged 2025-10-22 → W42) is the only hotfix.
+    assert {"repo": "acme/web", "week": "2025-W42", "hotfix_count": 1} in out
+    assert len(out) == 1
+
+
+def test_hotfix_count_excludes_unmerged(fixture_conn):
+    """A hotfix-labelled but unmerged PR must not be counted."""
+    fixture_conn.execute(
+        """
+        INSERT INTO pull_requests
+          (repo, number, title, author, base, opened_at, merged_at,
+           first_commit_at, merge_sha, labels,
+           additions, deletions, changed_files, ready_for_review_at)
+        VALUES
+          ('acme/api', 99, 'Open hotfix', 'eve', 'main',
+           '2025-10-15T00:00:00Z', NULL, NULL, NULL, 'hotfix',
+           NULL, NULL, NULL, NULL)
+        """
+    )
+    headers, rows = metrics.m_hotfix_count(fixture_conn, SINCE)
+    out = [_row_dict(headers, r) for r in rows]
+    assert not any(r["repo"] == "acme/api" for r in out)
+
+
+def test_hotfix_count_headers(fixture_conn):
+    headers, _ = metrics.m_hotfix_count(fixture_conn, SINCE)
+    assert headers == ["repo", "week", "hotfix_count"]
+
+
 def test_metrics_registry_has_all():
     assert set(metrics.METRICS) == {
         "deploy-freq-prs",
@@ -193,4 +226,5 @@ def test_metrics_registry_has_all():
         "summary",
         "review-latency",
         "large-prs",
+        "hotfix-count",
     }
