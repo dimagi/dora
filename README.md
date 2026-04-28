@@ -184,10 +184,6 @@ deployments (repo, deployment_id) PK
 
 The DB is a rebuildable cache — not a source of truth. Drop it and re-pull at any time.
 
-## Roadmap
-
-See [`docs/superpowers/specs/2026-04-24-dora-project-design.md`](docs/superpowers/specs/2026-04-24-dora-project-design.md) § Future work — includes `dora merge`, a dashboard date-range filter, deploy-status-based CFR, and a multi-team manifest.
-
 ## License
 
 BSD-3-Clause. See [LICENSE](LICENSE).
