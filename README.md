@@ -73,6 +73,19 @@ https://dimagi.github.io/dora/?url=https://raw.githubusercontent.com/<your-repo>
 
 To bust the cache deliberately (e.g. if a future schema change requires it), bump the `v1` prefix in the workflow's cache `key`.
 
+### Repos that don't use GitHub Deployments
+
+If your repo creates a GitHub Release on each deploy instead of a GitHub
+Deployment, run `dora pull` with `--source releases`:
+
+```bash
+dora pull --repo owner/name --since 2025-10-01 --source releases
+```
+
+Releases map to `environment='production'` rows in the `deployments`
+table. Charts, change-failure rate, and the dashboard work identically.
+Drafts and pre-releases are ignored.
+
 ### Cross-repo reports
 
 The default `GITHUB_TOKEN` in Actions is scoped to the workflow's own repo. To aggregate multiple repos (`--repo a/b --repo c/d`), generate a PAT or install a GitHub App with access to each repo and pass its token via `GITHUB_TOKEN` in the env.

@@ -43,6 +43,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # If your repo deploys via GitHub Releases instead of Deployments, add:
+          #   --source releases
           dora pull --repo ${{ github.repository }} --since 2025-10-01
           dora report --format json --output dora-report.json
 
