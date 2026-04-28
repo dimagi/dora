@@ -203,3 +203,33 @@ def fetch_deployments(
             "created_at":    d["created_at"],
             "status":        status,
         }
+
+
+def fetch_releases(
+    session: requests.Session,
+    repo: str,
+    since: datetime,
+    known_releases: set[int],
+) -> Generator[dict, None, None]:
+    """Yield published GitHub releases on/after `since` as deployment-shaped dicts.
+
+    Skips drafts, pre-releases, and releases already in `known_releases`.
+    Releases are immutable post-publish, so cached IDs are skipped entirely
+    (no status to refresh, unlike fetch_deployments).
+    """
+    for r in gh(session, f"/repos/{repo}/releases", {"per_page": 100}):
+        if r["draft"] or r["prerelease"]:
+            continue
+        if r["published_at"] is None:
+            continue
+        if iso_to_dt(r["published_at"]) < since:
+            return  # /releases is newest-first
+        if r["id"] in known_releases:
+            continue
+        yield {
+            "deployment_id": r["id"],
+            "sha":           r["target_commitish"],
+            "environment":   "production",
+            "created_at":    r["published_at"],
+            "status":        "success",
+        }

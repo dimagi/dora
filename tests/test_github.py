@@ -278,3 +278,88 @@ def test_fetch_deployments_fetches_status_for_unknown(requests_mock):
         session, "x/y", since, "production", known_deployments=set()
     ))
     assert out[0]["status"] == "success"
+
+
+# --- fetch_releases ------------------------------------------------------
+
+def test_fetch_releases_skips_draft_and_prerelease(requests_mock):
+    base = "https://api.github.com"
+    requests_mock.get(
+        f"{base}/repos/x/y/releases",
+        json=[
+            {
+                "id": 300, "tag_name": "v3", "target_commitish": "main",
+                "published_at": "2025-10-12T00:00:00Z",
+                "draft": False, "prerelease": True,
+            },
+            {
+                "id": 200, "tag_name": "v2", "target_commitish": "main",
+                "published_at": "2025-10-11T00:00:00Z",
+                "draft": True, "prerelease": False,
+            },
+            {
+                "id": 100, "tag_name": "v1", "target_commitish": "main",
+                "published_at": "2025-10-10T00:00:00Z",
+                "draft": False, "prerelease": False,
+            },
+        ],
+    )
+    session = requests.Session()
+    since = github.iso_to_dt("2025-10-01T00:00:00+00:00")
+    out = list(github.fetch_releases(session, "x/y", since, known_releases=set()))
+    assert len(out) == 1
+    assert out[0] == {
+        "deployment_id": 100,
+        "sha":           "main",
+        "environment":   "production",
+        "created_at":    "2025-10-10T00:00:00Z",
+        "status":        "success",
+    }
+
+
+def test_fetch_releases_stops_at_since_cutoff(requests_mock):
+    base = "https://api.github.com"
+    # Releases endpoint is newest-first; the iterator must stop on the
+    # first entry older than `since` (no need to walk all history).
+    requests_mock.get(
+        f"{base}/repos/x/y/releases",
+        json=[
+            {
+                "id": 200, "tag_name": "v2", "target_commitish": "main",
+                "published_at": "2025-10-15T00:00:00Z",
+                "draft": False, "prerelease": False,
+            },
+            {
+                "id": 100, "tag_name": "v1", "target_commitish": "main",
+                "published_at": "2025-09-15T00:00:00Z",  # older than since
+                "draft": False, "prerelease": False,
+            },
+        ],
+    )
+    session = requests.Session()
+    since = github.iso_to_dt("2025-10-01T00:00:00+00:00")
+    out = list(github.fetch_releases(session, "x/y", since, known_releases=set()))
+    assert [r["deployment_id"] for r in out] == [200]
+
+
+def test_fetch_releases_skips_cached(requests_mock):
+    base = "https://api.github.com"
+    requests_mock.get(
+        f"{base}/repos/x/y/releases",
+        json=[
+            {
+                "id": 200, "tag_name": "v2", "target_commitish": "main",
+                "published_at": "2025-10-12T00:00:00Z",
+                "draft": False, "prerelease": False,
+            },
+            {
+                "id": 100, "tag_name": "v1", "target_commitish": "main",
+                "published_at": "2025-10-10T00:00:00Z",
+                "draft": False, "prerelease": False,
+            },
+        ],
+    )
+    session = requests.Session()
+    since = github.iso_to_dt("2025-10-01T00:00:00+00:00")
+    out = list(github.fetch_releases(session, "x/y", since, known_releases={100}))
+    assert [r["deployment_id"] for r in out] == [200]
