@@ -33,6 +33,84 @@ def _make_progress(label: str):
     return tick, done
 
 
+def _pull_prs(conn, session, repo, since_dt, base):
+    known_prs = {
+        row[0] for row in conn.execute(
+            "SELECT number FROM pull_requests "
+            "WHERE repo = ? AND first_commit_at IS NOT NULL",
+            (repo,),
+        )
+    }
+    print(
+        f"  fetching merged PRs into {base}… "
+        f"({len(known_prs)} cached, commits call skipped)",
+        file=sys.stderr,
+    )
+    tick, done = _make_progress(f"merged PRs into {base}")
+    n_cached = 0
+    for pr in github.fetch_prs(session, repo, since_dt, base, known_prs):
+        db.upsert_pr(conn, repo, pr)
+        if pr["number"] in known_prs:
+            n_cached += 1
+        tick()
+    done()
+    if n_cached:
+        print(f"    ({n_cached} reused from cache)", file=sys.stderr)
+    conn.commit()
+
+
+def _pull_deploy_signals(conn, session, repo, since_dt, environment, source):
+    """Fetch deploy signals for `repo` and upsert them into `deployments`.
+
+    Two source paths share the same upsert + progress scaffolding; only the
+    cache query, fetcher, and log labels differ.
+    """
+    if source == "releases":
+        known = {
+            row[0] for row in conn.execute(
+                "SELECT deployment_id FROM deployments "
+                "WHERE repo = ? AND environment = 'production'",
+                (repo,),
+            )
+        }
+        label = "releases"
+        cache_msg = (
+            f"  fetching releases… ({len(known)} cached, skipped)"
+        )
+        fetcher = github.fetch_releases(session, repo, since_dt, known)
+    else:
+        placeholders = ",".join("?" * len(TERMINAL_DEPLOY_STATUSES))
+        known = {
+            row[0] for row in conn.execute(
+                f"SELECT deployment_id FROM deployments "
+                f"WHERE repo = ? AND environment = ? "
+                f"AND status IN ({placeholders})",
+                (repo, environment, *TERMINAL_DEPLOY_STATUSES),
+            )
+        }
+        label = f"deployments ({environment})"
+        cache_msg = (
+            f"  fetching deployments ({environment})… "
+            f"({len(known)} cached, statuses call skipped)"
+        )
+        fetcher = github.fetch_deployments(
+            session, repo, since_dt, environment, known
+        )
+
+    print(cache_msg, file=sys.stderr)
+    tick, done = _make_progress(label)
+    n_cached = 0
+    for d in fetcher:
+        db.upsert_deployment(conn, repo, d)
+        if d["deployment_id"] in known:
+            n_cached += 1
+        tick()
+    done()
+    if n_cached:
+        print(f"    ({n_cached} reused from cache)", file=sys.stderr)
+    conn.commit()
+
+
 def run_pull(
     *,
     repos: list[str],
@@ -40,10 +118,16 @@ def run_pull(
     db_path: str,
     base: str,
     environment: str,
+    source: str,
     skip_prs: bool,
     skip_deployments: bool,
 ) -> None:
-    """Pull signals for one or more repos into the SQLite DB."""
+    """Pull signals for one or more repos into the SQLite DB.
+
+    `source` selects the deploy-signal endpoint:
+        "deployments" → /repos/.../deployments (default)
+        "releases"    → /repos/.../releases (mapped to environment='production')
+    """
     token = github.get_token()
     session = github.make_session(token)
 
@@ -57,57 +141,11 @@ def run_pull(
             print(f"→ {repo}", file=sys.stderr)
 
             if not skip_prs:
-                known_prs = {
-                    row[0] for row in conn.execute(
-                        "SELECT number FROM pull_requests "
-                        "WHERE repo = ? AND first_commit_at IS NOT NULL",
-                        (repo,),
-                    )
-                }
-                print(
-                    f"  fetching merged PRs into {base}… "
-                    f"({len(known_prs)} cached, commits call skipped)",
-                    file=sys.stderr,
-                )
-                tick, done = _make_progress(f"merged PRs into {base}")
-                n_cached = 0
-                for pr in github.fetch_prs(session, repo, since_dt, base, known_prs):
-                    db.upsert_pr(conn, repo, pr)
-                    if pr["number"] in known_prs:
-                        n_cached += 1
-                    tick()
-                done()
-                if n_cached:
-                    print(f"    ({n_cached} reused from cache)", file=sys.stderr)
-                conn.commit()
+                _pull_prs(conn, session, repo, since_dt, base)
 
             if not skip_deployments:
-                placeholders = ",".join("?" * len(TERMINAL_DEPLOY_STATUSES))
-                known_deployments = {
-                    row[0] for row in conn.execute(
-                        f"SELECT deployment_id FROM deployments "
-                        f"WHERE repo = ? AND environment = ? "
-                        f"AND status IN ({placeholders})",
-                        (repo, environment, *TERMINAL_DEPLOY_STATUSES),
-                    )
-                }
-                print(
-                    f"  fetching deployments ({environment})… "
-                    f"({len(known_deployments)} cached, statuses call skipped)",
-                    file=sys.stderr,
+                _pull_deploy_signals(
+                    conn, session, repo, since_dt, environment, source,
                 )
-                tick, done = _make_progress(f"deployments ({environment})")
-                n_cached = 0
-                for d in github.fetch_deployments(
-                    session, repo, since_dt, environment, known_deployments
-                ):
-                    db.upsert_deployment(conn, repo, d)
-                    if d["deployment_id"] in known_deployments:
-                        n_cached += 1
-                    tick()
-                done()
-                if n_cached:
-                    print(f"    ({n_cached} reused from cache)", file=sys.stderr)
-                conn.commit()
     finally:
         conn.close()
