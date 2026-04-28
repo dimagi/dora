@@ -101,3 +101,15 @@ INSERT INTO pull_requests VALUES
      '2025-10-27T00:00:00Z', '2025-10-28T00:00:00Z', NULL,
      'sha7', '',
      NULL, NULL, NULL, NULL);
+
+-- W42 (Sun 2025-10-26 — last day of W42 by SQLite %W, Mon-start):
+-- acme/api, 1 merged PR authored by dependabot (bot author).
+-- Used to verify the bot-filter behavior across metrics.
+-- changed_files=15 → would be a "large PR"; weekend merge.
+-- Both metrics exclude bots by default, so it should be invisible to them;
+-- deploy-freq-prs / change-failure-rate include bots so it should appear there.
+INSERT INTO pull_requests VALUES
+    ('acme/api', 8, 'chore(deps): bump cryptography', 'dependabot[bot]', 'main',
+     '2025-10-26T00:00:00Z', '2025-10-26T00:30:00Z', '2025-10-26T00:00:00Z',
+     'sha8', '',
+     200, 100, 15, NULL);

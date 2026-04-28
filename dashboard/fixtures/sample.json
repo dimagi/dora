@@ -1,9 +1,11 @@
 {
   "since": "2025-10-24",
+  "bot_policy": "default",
   "metrics": [
     {
       "metric": "deploy-freq-prs",
       "description": "Weekly merged PRs (proxy for shipped changes)",
+      "exclude_bots": false,
       "data": [
         {
           "repo": "acme/example",
@@ -130,6 +132,7 @@
     {
       "metric": "deploy-freq",
       "description": "Weekly successful deployments (success + inactive GitHub statuses)",
+      "exclude_bots": null,
       "data": [
         {
           "repo": "acme/example",
@@ -280,6 +283,7 @@
     {
       "metric": "lead-time",
       "description": "Weekly lead time in hours, first commit to merge (mean / median / p90)",
+      "exclude_bots": true,
       "data": [
         {
           "repo": "acme/example",
@@ -478,6 +482,7 @@
     {
       "metric": "change-failure-rate",
       "description": "Weekly % of merged PRs labelled `caused-incident`",
+      "exclude_bots": false,
       "data": [
         {
           "repo": "acme/example",
@@ -652,6 +657,7 @@
     {
       "metric": "change-failure-prs",
       "description": "Individual `caused-incident` PRs (drill-down for change-failure-rate)",
+      "exclude_bots": false,
       "data": [
         {
           "repo": "acme/example",
@@ -690,6 +696,7 @@
     {
       "metric": "hotfixes",
       "description": "Recent hotfix PRs with their preceding merges (investigative)",
+      "exclude_bots": false,
       "data": [
         {
           "repo": "acme/example",
@@ -824,6 +831,7 @@
     {
       "metric": "large-prs",
       "description": "Weekly count of merged PRs with changed_files >= 10 (churn risk)",
+      "exclude_bots": true,
       "data": [
         { "repo": "acme/example", "week": "2025-W43", "large_prs": 1 },
         { "repo": "acme/example", "week": "2025-W44", "large_prs": 2 },
@@ -842,6 +850,7 @@
     {
       "metric": "hotfix-count",
       "description": "Weekly count of merged PRs labelled `hotfix`",
+      "exclude_bots": false,
       "data": [
         { "repo": "acme/example", "week": "2025-W44", "hotfix_count": 2 },
         { "repo": "acme/example", "week": "2025-W46", "hotfix_count": 1 },
@@ -851,6 +860,7 @@
     {
       "metric": "weekend-merges",
       "description": "Individual PRs merged on a Saturday or Sunday (UTC)",
+      "exclude_bots": true,
       "data": [
         { "repo": "acme/example", "week": "2025-W43", "pr": 2510, "author": "alice",   "title": "Cache busting for static assets",        "merged": "2025-10-25", "dow": "Sat" },
         { "repo": "acme/example", "week": "2025-W43", "pr": 2511, "author": "bob",     "title": "Fix flaky integration test",             "merged": "2025-10-26", "dow": "Sun" },
@@ -863,6 +873,7 @@
     {
       "metric": "review-latency",
       "description": "Weekly review latency in hours (merged − ready_for_review_at | opened_at), bucketed by changed_files (XS=1, S=2-3, M=4-9, L+=10+)",
+      "exclude_bots": true,
       "data": [
         {"repo": "acme/example", "week": "2025-W43", "bucket": "XS", "n_prs": 4, "median_h": 3.2,  "p90_h": 8.0},
         {"repo": "acme/example", "week": "2025-W43", "bucket": "S",  "n_prs": 3, "median_h": 6.5,  "p90_h": 14.0},
@@ -917,6 +928,7 @@
     {
       "metric": "summary",
       "description": "Per-repo roll-up over the whole window",
+      "exclude_bots": null,
       "data": [
         {
           "repo": "acme/example",

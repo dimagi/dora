@@ -35,6 +35,14 @@ def _add_report(sub):
     p.add_argument("--metric", choices=list(METRICS), action="append")
     p.add_argument("--format", choices=list(report_mod.FORMATTERS), default="table")
     p.add_argument("--output", help="Write output to FILE instead of stdout")
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--exclude-bots", dest="exclude_bots", action="store_const",
+                   const=True,
+                   help="Exclude PRs whose author ends with `[bot]` from every metric")
+    g.add_argument("--include-bots", dest="exclude_bots", action="store_const",
+                   const=False,
+                   help="Force-include bot PRs in every metric (override defaults)")
+    p.set_defaults(exclude_bots=None)
 
 
 def _add_upload(sub):
@@ -63,15 +71,17 @@ def _cmd_report(args: argparse.Namespace) -> int:
     since = (datetime.now(timezone.utc) - timedelta(weeks=args.weeks)).isoformat()
     conn = sqlite3.connect(args.db)
     try:
-        results = report_mod.run_report(conn, since, metrics=args.metric)
+        bot_policy, results = report_mod.run_report(
+            conn, since, metrics=args.metric, exclude_bots=args.exclude_bots,
+        )
     finally:
         conn.close()
     fmt = report_mod.FORMATTERS[args.format]
     if args.output:
         with open(args.output, "w") as f:
-            fmt(results, since, f)
+            fmt(bot_policy, results, since, f)
     else:
-        fmt(results, since, sys.stdout)
+        fmt(bot_policy, results, since, sys.stdout)
     return 0
 
 
