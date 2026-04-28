@@ -231,6 +231,33 @@ function resetCharts() {
   charts = [];
 }
 
+// Show an empty-state message inside a chart panel without removing the
+// canvas — replacing innerHTML would destroy the canvas, and the next
+// render would then either crash on null.parentElement (still empty) or
+// pass null to `new Chart(...)` which dereferences canvas.id.
+function showEmpty(canvasId, msg = "No data yet") {
+  const ctx = document.getElementById(canvasId);
+  if (!ctx) return;
+  ctx.style.display = "none";
+  const wrap = ctx.parentElement;
+  let empty = wrap.querySelector(".empty");
+  if (!empty) {
+    empty = document.createElement("div");
+    empty.className = "empty";
+    wrap.appendChild(empty);
+  }
+  empty.textContent = msg;
+}
+
+// Restore a canvas hidden by showEmpty and clear any sibling empty message.
+function showCanvas(canvasId) {
+  const ctx = document.getElementById(canvasId);
+  if (!ctx) return null;
+  ctx.style.display = "";
+  ctx.parentElement.querySelector(".empty")?.remove();
+  return ctx;
+}
+
 function render() {
   showState({});
   dash.hidden = false;
@@ -450,13 +477,14 @@ function baseOpts() {
 
 function renderFreqChart(freqPrs, freqDeploys) {
   const { labels, a, b } = alignByWeek(freqPrs, freqDeploys, r => r.deploys);
-  const primary = readVar("--chart-primary");
-  const secondary = readVar("--chart-secondary");
-  const ctx = document.getElementById("freqChart");
   if (!labels.length) {
-    ctx.parentElement.innerHTML = '<div class="empty">No data yet</div>';
+    showEmpty("freqChart");
     return;
   }
+  const ctx = showCanvas("freqChart");
+  if (!ctx) return;
+  const primary = readVar("--chart-primary");
+  const secondary = readVar("--chart-secondary");
   charts.push(new Chart(ctx, {
     type: "line",
     data: {
@@ -474,9 +502,11 @@ function renderFreqChart(freqPrs, freqDeploys) {
 
 function renderLeadChart(leadTime) {
   if (!leadTime.length) {
-    document.getElementById("leadChart").parentElement.innerHTML = '<div class="empty">No data yet</div>';
+    showEmpty("leadChart");
     return;
   }
+  const ctx = showCanvas("leadChart");
+  if (!ctx) return;
   const rows = [...leadTime].sort((a, b) => (a.week < b.week ? -1 : 1));
   const labels = rows.map(r => r.week);
   const primary = readVar("--chart-primary");
@@ -484,7 +514,7 @@ function renderLeadChart(leadTime) {
   const accent = readVar("--chart-accent");
   const opts = baseOpts();
   opts.scales.y.title = { display: true, text: "hours", color: readVar("--chart-tick"), font: { size: 11 } };
-  charts.push(new Chart(document.getElementById("leadChart"), {
+  charts.push(new Chart(ctx, {
     type: "line",
     data: {
       labels,
@@ -503,14 +533,16 @@ function renderLeadChart(leadTime) {
 
 function renderCFRChart(cfr) {
   if (!cfr.length) {
-    document.getElementById("cfrChart").parentElement.innerHTML = '<div class="empty">No data yet</div>';
+    showEmpty("cfrChart");
     return;
   }
+  const ctx = showCanvas("cfrChart");
+  if (!ctx) return;
   const rows = [...cfr].sort((a, b) => (a.week < b.week ? -1 : 1));
   const accent = readVar("--chart-accent");
   const opts = baseOpts();
   opts.scales.y.ticks.callback = v => v + "%";
-  charts.push(new Chart(document.getElementById("cfrChart"), {
+  charts.push(new Chart(ctx, {
     type: "bar",
     data: {
       labels: rows.map(r => r.week),
@@ -528,11 +560,12 @@ const REVIEW_LATENCY_BUCKETS = [
 ];
 
 function renderReviewLatencyChart(rows) {
-  const ctx = document.getElementById("reviewLatencyChart");
   if (!rows.length) {
-    ctx.parentElement.innerHTML = '<div class="empty">No data yet</div>';
+    showEmpty("reviewLatencyChart");
     return;
   }
+  const ctx = showCanvas("reviewLatencyChart");
+  if (!ctx) return;
 
   // One sorted week axis spanning all buckets.
   const weeks = [...new Set(rows.map(r => r.week))].sort();
