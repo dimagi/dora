@@ -78,3 +78,56 @@ def test_cli_report_review_latency_json(fixture_db):
     rl = next(m for m in payload["metrics"] if m["metric"] == "review-latency")
     assert rl["data"], "review-latency returned no rows from the fixture DB"
     assert all(r["bucket"] in {"XS", "S", "M", "L+"} for r in rl["data"])
+
+
+# --- pull --source dispatch ----------------------------------------------
+
+def test_cli_pull_default_source_is_deployments(monkeypatch):
+    """Default --source is 'deployments' (preserves pre-existing behavior)."""
+    captured = {}
+
+    def fake_run_pull(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(cli.pull_mod, "run_pull", fake_run_pull)
+    rc = cli.main(["pull", "--repo", "x/y", "--since", "2025-01-01"])
+    assert rc == 0
+    assert captured["source"] == "deployments"
+
+
+def test_cli_pull_source_releases(monkeypatch):
+    captured = {}
+
+    def fake_run_pull(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(cli.pull_mod, "run_pull", fake_run_pull)
+    rc = cli.main([
+        "pull", "--repo", "x/y", "--since", "2025-01-01",
+        "--source", "releases",
+    ])
+    assert rc == 0
+    assert captured["source"] == "releases"
+
+
+def test_cli_pull_warns_when_environment_set_with_releases(monkeypatch, capsys):
+    """`--source releases` ignores --environment; warn if user set it explicitly."""
+    monkeypatch.setattr(cli.pull_mod, "run_pull", lambda **kw: None)
+    rc = cli.main([
+        "pull", "--repo", "x/y", "--since", "2025-01-01",
+        "--source", "releases",
+        "--environment", "staging",
+    ])
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "ignored" in err.lower() and "releases" in err.lower()
+
+
+def test_cli_pull_invalid_source_rejected():
+    """argparse should reject --source values outside the choice set."""
+    with pytest.raises(SystemExit) as exc:
+        cli.main([
+            "pull", "--repo", "x/y", "--since", "2025-01-01",
+            "--source", "rainbows",
+        ])
+    assert exc.value.code == 2

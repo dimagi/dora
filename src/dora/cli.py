@@ -24,6 +24,11 @@ def _add_pull(sub):
     p.add_argument("--db", default="dora.db")
     p.add_argument("--base", default="main")
     p.add_argument("--environment", default="production")
+    p.add_argument("--source", choices=("deployments", "releases"),
+                   default="deployments",
+                   help="Deploy-signal source: GitHub Deployments (default) "
+                        "or GitHub Releases. With 'releases', --environment is ignored "
+                        "(releases always map to environment='production').")
     p.add_argument("--skip-prs", action="store_true")
     p.add_argument("--skip-deployments", action="store_true")
 
@@ -55,12 +60,19 @@ def _add_upload(sub):
 
 
 def _cmd_pull(args: argparse.Namespace) -> int:
+    if args.source == "releases" and args.environment != "production":
+        print(
+            f"warning: --environment={args.environment!r} is ignored with "
+            f"--source=releases (releases always map to environment='production')",
+            file=sys.stderr,
+        )
     pull_mod.run_pull(
         repos=args.repo,
         since=args.since,
         db_path=args.db,
         base=args.base,
         environment=args.environment,
+        source=args.source,
         skip_prs=args.skip_prs,
         skip_deployments=args.skip_deployments,
     )
