@@ -3,7 +3,7 @@
 import sqlite3
 from unittest.mock import patch
 
-from dora import db, pull
+from dora import pull
 
 
 def _release_dict(rid: int, published_at: str) -> dict:

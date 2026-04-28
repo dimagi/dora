@@ -1,6 +1,10 @@
 """Orchestration: fetch GitHub → upsert into SQLite, with caching + progress."""
 
+import sqlite3
 import sys
+from datetime import datetime
+
+import requests
 
 from . import db, github
 
@@ -33,7 +37,13 @@ def _make_progress(label: str):
     return tick, done
 
 
-def _pull_prs(conn, session, repo, since_dt, base):
+def _pull_prs(
+    conn: sqlite3.Connection,
+    session: requests.Session,
+    repo: str,
+    since_dt: datetime,
+    base: str,
+) -> None:
     known_prs = {
         row[0] for row in conn.execute(
             "SELECT number FROM pull_requests "
@@ -59,7 +69,14 @@ def _pull_prs(conn, session, repo, since_dt, base):
     conn.commit()
 
 
-def _pull_deploy_signals(conn, session, repo, since_dt, environment, source):
+def _pull_deploy_signals(
+    conn: sqlite3.Connection,
+    session: requests.Session,
+    repo: str,
+    since_dt: datetime,
+    environment: str,
+    source: str,
+) -> None:
     """Fetch deploy signals for `repo` and upsert them into `deployments`.
 
     Two source paths share the same upsert + progress scaffolding; only the
@@ -102,6 +119,9 @@ def _pull_deploy_signals(conn, session, repo, since_dt, environment, source):
     n_cached = 0
     for d in fetcher:
         db.upsert_deployment(conn, repo, d)
+        # n_cached only increments on the deployments path: fetch_deployments
+        # re-yields cached IDs (status=None) so upsert can refresh transient
+        # statuses, while fetch_releases skips them entirely (immutable).
         if d["deployment_id"] in known:
             n_cached += 1
         tick()
